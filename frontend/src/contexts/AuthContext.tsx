@@ -12,22 +12,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Hydrate from localStorage immediately to avoid redirect flicker on refresh
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      const raw = localStorage.getItem('auth_user');
-      return raw ? (JSON.parse(raw) as User) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const persistUser = (u: User | null) => {
-    try {
-      if (u) localStorage.setItem('auth_user', JSON.stringify(u));
-      else localStorage.removeItem('auth_user');
-    } catch {}
-  };
+  // Start with no cached user (do not use localStorage for auth caching)
+  const [user, setUser] = useState<User | null>(null);
 
   // Try to hydrate current user from backend (cookie-based session)
   useEffect(() => {
@@ -38,7 +24,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!mounted) return;
         if (res?.user) {
           setUser(res.user as User);
-          persistUser(res.user as User);
         }
         // If res.user is null, keep whatever was in localStorage to honor the user's request
       } catch (e) {
@@ -53,7 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await api.apiLogin(email, password);
       if (res?.user) {
         setUser(res.user as User);
-        persistUser(res.user as User);
         return true;
       }
       return false;
@@ -78,7 +62,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       if (res?.user) {
         setUser(res.user as User);
-        persistUser(res.user as User);
         return true;
       }
       return false;
@@ -89,7 +72,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setUser(null);
-    persistUser(null);
     api.apiLogout().catch(() => {});
   };
 

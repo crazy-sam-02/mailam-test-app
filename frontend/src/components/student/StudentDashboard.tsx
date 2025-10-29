@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LogOut, Clock, FileText, CheckCircle, Sparkles, TrendingUp } from 'lucide-react';
 import { Test, Attempt } from '@/types';
+import { formatDurationMs } from '@/lib/utils';
 import { apiGetTests, apiGetMyAttempts } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { useNavigate } from 'react-router-dom';
@@ -16,36 +17,26 @@ const StudentDashboard = () => {
     const [testPoints, setTestPoints] = useState<Record<string, number>>({});
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadTests();
-  }, [user]);
-
-  const loadTests = async () => {
+  const loadTests = useCallback(async () => {
     // fallback sources
     const loadLocal = () => {
-      const allTests = JSON.parse(localStorage.getItem('tests') || '[]');
-      const allAttempts = JSON.parse(localStorage.getItem('attempts') || '[]');
-      const eligible = allTests.filter(
-        (t: Test) =>
-          t.assignedTo.semester === user?.semester &&
-          (!t.assignedTo.department || t.assignedTo.department === user?.dept)
-      );
-      const attempts = allAttempts.filter((a: Attempt) => a.studentId === user?.id);
-      setAvailableTests(eligible);
-      setMyAttempts(attempts);
+      // Strictly avoid localStorage: clear lists and show message if offline
+      setAvailableTests([]);
+      setMyAttempts([]);
     };
 
     try {
       const resp = await apiGetTests();
       const serverTests = Array.isArray(resp?.tests) ? resp.tests : [];
-      const mapped: Test[] = serverTests.map((t: any) => {
+      const mapped: Test[] = serverTests.map((t: Record<string, any>) => {
         const id = String(t._id || t.id);
         const title = String(t.title || 'Untitled');
         const description = String(t.description || '');
         const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
         const assigned = t.assignedTo || {};
         const semester = String(assigned.semester || user?.semester || '');
-        const department = String(assigned.dept || assigned.department || user?.dept || '');
+        const depts = assigned.departments || assigned.department || assigned.dept;
+        const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
         const durationMinutes = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
         const attemptsAllowed = Number.isFinite(t.attemptsAllowed) ? t.attemptsAllowed : 1;
         const shuffleQuestions = !!t.shuffleQuestions;
@@ -57,7 +48,7 @@ const StudentDashboard = () => {
           id,
           title,
           description,
-          assignedTo: { semester, department },
+          assignedTo: { semester, departments },
           questions: Array.from({ length: questionsCount }, (_, i) => `${id}-q${i}`),
           durationMinutes,
           attemptsAllowed,
@@ -68,33 +59,42 @@ const StudentDashboard = () => {
           createdBy,
         } as Test;
       });
-      setAvailableTests(mapped);
+      const filtered = mapped.filter((t) => {
+        const semMatches = String(t.assignedTo?.semester || '') === String(user?.semester || '');
+        const deptMatches = !t.assignedTo.departments || t.assignedTo.departments.length === 0 || t.assignedTo.departments.includes(user?.dept || 'undefined');
+        return semMatches && deptMatches;
+      });
+      setAvailableTests(filtered);
 
       // fetch my attempts from backend
       try {
         const respA = await apiGetMyAttempts();
         const serverAttempts = Array.isArray(respA?.attempts) ? respA.attempts : [];
-        const mappedA: Attempt[] = serverAttempts.map((a: any) => ({
+        const mappedA: Attempt[] = serverAttempts.map((a: Record<string, any>) => ({
           id: String(a._id || a.attemptId || crypto.randomUUID()),
           testId: String(a.test?._id || a.test || ''),
           studentId: String((a.student && a.student._id) || a.student || (user?.id || '')),
-          answers: Array.isArray(a.answers) ? a.answers.map((x: any) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
+          answers: Array.isArray(a.answers) ? a.answers.map((x: Record<string, any>) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
           score: Number(a.score || 0),
           startedAt: String(a.startedAt || ''),
           finishedAt: String(a.submittedAt || a.finishedAt || ''),
           suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
         }));
         setMyAttempts(mappedA);
-      } catch {
-        // fallback to local attempts
-        const allAttempts = JSON.parse(localStorage.getItem('attempts') || '[]');
-        const attempts = allAttempts.filter((a: Attempt) => a.studentId === user?.id);
-        setMyAttempts(attempts);
+      } catch (err) {
+        // Failed to load attempts from server — do not use localStorage fallback per project policy
+        console.warn('Failed to load attempts from server', err);
+        setMyAttempts([]);
       }
     } catch (e) {
+      console.error('Failed to load tests/attempts from server', e);
       loadLocal();
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    loadTests();
+  }, [loadTests]);
 
   const getAttemptCount = (testId: string) => {
     return myAttempts.filter(a => a.testId === testId).length;
@@ -104,9 +104,19 @@ const StudentDashboard = () => {
     return getAttemptCount(test.id) < test.attemptsAllowed;
   };
 
-  const avgScore = myAttempts.length > 0
-    ? Math.round(myAttempts.reduce((sum, a) => sum + a.score, 0) / myAttempts.length)
-    : 0;
+  // Compute average as the mean of per-attempt percentages.
+  // For each attempt, find the corresponding test to get total questions.
+  const avgScore = (() => {
+    if (myAttempts.length === 0) return 0;
+    const percentages = myAttempts.map((a) => {
+      const test = availableTests.find((t) => t.id === a.testId);
+      const totalQs = test ? (Array.isArray(test.questions) ? test.questions.length : Number(test.questions || 0)) : 0;
+      if (!totalQs) return 0; // avoid division by zero
+      return (Number(a.score || 0) / totalQs) * 100;
+    });
+    const sum = percentages.reduce((s, p) => s + p, 0);
+    return Math.round(sum / percentages.length);
+  })();
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -270,18 +280,28 @@ const StudentDashboard = () => {
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-lg">{test?.title || 'Unknown Test'}</CardTitle>
-                          <Badge 
-                            variant={attempt.score >= 70 ? 'default' : 'secondary'}
-                            className={attempt.score >= 70 ? 'bg-gradient-to-r from-emerald-500 to-green-500' : ''}
-                          >
-                            Score: {attempt.score}%
-                          </Badge>
+                          {(() => {
+                            const test = availableTests.find(t => t.id === attempt.testId);
+                            const totalQs = test ? (Array.isArray(test.questions) ? test.questions.length : Number(test.questions || 0)) : 0;
+                            const percent = totalQs ? Math.round((attempt.score / totalQs) * 100) : null;
+                            const passed = percent !== null ? percent >= 70 : attempt.score >= 70;
+                            return (
+                              <Badge 
+                                variant={passed ? 'default' : 'secondary'}
+                                className={passed ? 'bg-gradient-to-r from-emerald-500 to-green-500' : ''}
+                              >
+                                {percent !== null ? `Score: ${percent}%` : `Questions Correct: ${attempt.score}`}
+                              </Badge>
+                            );
+                          })()}
                         </div>
                       </CardHeader>
                       <CardContent>
                         <div className="text-sm text-muted-foreground">
                           Completed on {new Date(attempt.finishedAt).toLocaleDateString()} at{' '}
-                          {new Date(attempt.finishedAt).toLocaleTimeString()}
+                          {new Date(attempt.finishedAt).toLocaleTimeString()} •
+                          {' '}
+                          Time taken: {formatDurationMs(new Date(attempt.finishedAt).getTime() - new Date(attempt.startedAt).getTime())}
                         </div>
                       </CardContent>
                     </Card>

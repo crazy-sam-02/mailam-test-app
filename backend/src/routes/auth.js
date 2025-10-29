@@ -86,6 +86,29 @@ router.get('/students', requireAuth, requireAdmin, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Get single student by id (admin only)
+router.get('/students/:id', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password').lean();
+    if (!user) return res.status(404).json({ error: 'Student not found' });
+    // Return full student details (safe fields)
+    const student = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      dept: user.dept,
+      semester: user.semester,
+      year: user.year,
+      section: user.section,
+      enrollmentNumber: user.enrollmentNumber,
+      registerNumber: user.registerNumber,
+      createdAt: user.createdAt,
+      role: user.role || 'student',
+    };
+    res.json({ student });
+  } catch (err) { next(err); }
+});
+
 // Login
 router.post('/login', async (req, res, next) => {
   try {

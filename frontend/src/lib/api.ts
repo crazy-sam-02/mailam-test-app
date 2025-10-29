@@ -1,6 +1,6 @@
 import type { User, Test, Attempt, Answer } from '@/types';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
+const API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
 
 async function request(path: string, opts: RequestInit = {}) {
   const res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -9,8 +9,8 @@ async function request(path: string, opts: RequestInit = {}) {
   try { body = text ? JSON.parse(text) : null; } catch (e) { body = text; }
   if (!res.ok) {
     const err = new Error(body?.error || res.statusText || 'Request failed');
-    (err as any).status = res.status;
-    (err as any).body = body;
+    (err as Record<string, any>).status = res.status;
+    (err as Record<string, any>).body = body;
     throw err;
   }
   return body;
@@ -35,6 +35,20 @@ export async function apiMe() {
 
 export async function apiLogout() {
   return request('/auth/logout', { method: 'POST' });
+}
+
+export async function apiGetStudents(params: { semester?: string; dept?: string; section?: string; page?: number; limit?: number; } = {}) {
+  const query = new URLSearchParams();
+  if (params.semester) query.set('semester', params.semester);
+  if (params.dept) query.set('dept', params.dept);
+  if (params.section) query.set('section', params.section);
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  return request(`/auth/students?${query.toString()}`, { method: 'GET' });
+}
+
+export async function apiGetStudent(studentId: string) {
+  return request(`/auth/students/${studentId}`, { method: 'GET' });
 }
 
 // Tests
@@ -63,7 +77,7 @@ export async function apiStartAttempt(testId: string) {
   return request(`/tests/${testId}/start`, { method: 'POST' });
 }
 
-export async function apiSubmitAttempt(testId: string, body: { attemptId: string; answers: Answer[]; suspiciousEvents?: any[]; }) {
+export async function apiSubmitAttempt(testId: string, body: { attemptId: string; answers: Answer[]; suspiciousEvents?: Record<string, any>[]; }) {
   return request(`/tests/${testId}/submit`, { method: 'POST', body: JSON.stringify(body) });
 }
 
@@ -81,6 +95,8 @@ export default {
   apiRegisterAdmin,
   apiMe,
   apiLogout,
+  apiGetStudents,
+  apiGetStudent,
   apiGetTests,
   apiGetTest,
   apiCreateTest,

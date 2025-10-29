@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatDurationMs } from '@/lib/utils';
 
 interface TestAttendanceViewProps {
   attempts: Attempt[];
@@ -58,7 +59,7 @@ const TestAttendanceView = ({ attempts, tests, students }: TestAttendanceViewPro
                     <TableHead>Student Name</TableHead>
                     <TableHead>Enrollment No.</TableHead>
                     <TableHead>Test</TableHead>
-                    <TableHead>Score</TableHead>
+                    <TableHead>Questions Correct</TableHead>
                     <TableHead>Time Taken</TableHead>
                     <TableHead>Malpractice</TableHead>
                   </TableRow>
@@ -71,14 +72,20 @@ const TestAttendanceView = ({ attempts, tests, students }: TestAttendanceViewPro
                         <TableRow key={attempt.id}>
                           <TableCell className="font-medium">{student.name}</TableCell>
                           <TableCell>{student.enrollmentNumber || 'N/A'}</TableCell>
-                          <TableCell>{getTestName(attempt.testId)}</TableCell>
+                          <TableCell>{
+                            // Prefer the test title from the tests list; fall back to attempt.testTitle or populated attempt.test
+                            tests.find(t => t.id === attempt.testId)?.title
+                            || (attempt as Record<string, any>).testTitle
+                            || (attempt as Record<string, any>).test?.title
+                            || 'Unknown'
+                          }</TableCell>
                           <TableCell>
                             <Badge variant={attempt.score >= 70 ? 'default' : 'secondary'}>
-                              {attempt.score}%
+                              {attempt.score}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {Math.round((new Date(attempt.finishedAt).getTime() - new Date(attempt.startedAt).getTime()) / 60000)} min
+                            {formatDurationMs(new Date(attempt.finishedAt).getTime() - new Date(attempt.startedAt).getTime())}
                           </TableCell>
                           <TableCell>
                             {suspiciousCount > 0 ? (

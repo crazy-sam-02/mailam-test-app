@@ -35,7 +35,7 @@ const ResultsView = ({ attempts, tests, students }: ResultsViewProps) => {
             <TableRow>
               <TableHead>Student</TableHead>
               <TableHead>Test</TableHead>
-              <TableHead>Score</TableHead>
+              <TableHead>Questions Correct</TableHead>
               <TableHead>Time</TableHead>
               <TableHead>Malpractice</TableHead>
             </TableRow>
@@ -49,7 +49,7 @@ const ResultsView = ({ attempts, tests, students }: ResultsViewProps) => {
                   <TableCell>{getTestName(attempt.testId)}</TableCell>
                   <TableCell>
                     <Badge variant={attempt.score >= 70 ? 'default' : 'secondary'}>
-                      {attempt.score}%
+                      {attempt.score}
                     </Badge>
                   </TableCell>
                   <TableCell>

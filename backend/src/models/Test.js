@@ -10,10 +10,12 @@ const QuestionSchema = new mongoose.Schema({
 const TestSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String },
+  // Optional client-generated id for offline sync deduplication
+  clientId: { type: String, index: true, sparse: true },
   questions: [QuestionSchema],
   // Restrict visibility/eligibility to a specific group of students
   assignedTo: {
-    dept: { type: String, required: true },
+    departments: [{ type: String }],
     semester: { type: String },
     section: { type: String },
     year: { type: String },
@@ -29,5 +31,11 @@ const TestSchema = new mongoose.Schema({
   createdByModel: { type: String, enum: ['User', 'Admin'], default: 'Admin' },
   createdAt: { type: Date, default: Date.now },
 });
+
+// Indexes for faster queries: find tests by department and by creator
+TestSchema.index({ 'assignedTo.departments': 1 });
+TestSchema.index({ createdBy: 1 });
+// Optional: text index on title for quick search
+TestSchema.index({ title: 'text' });
 
 module.exports = mongoose.model('Test', TestSchema);

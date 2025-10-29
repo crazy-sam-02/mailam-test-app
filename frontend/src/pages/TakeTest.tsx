@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Test, Question, Answer, SuspiciousEvent, Attempt } from '@/types';
@@ -14,7 +14,7 @@ const TakeTest = () => {
   const { testId } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [test, setTest] = useState<any | null>(null);
+  const [test, setTest] = useState<Test | null>(null);
   const [questions, setQuestions] = useState<Array<{ id: string; text: string; options: string[] }>>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Array<{ questionId: string; selectedOption: number; timeTakenSec: number }>>([]);
@@ -25,36 +25,56 @@ const TakeTest = () => {
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [attemptId, setAttemptId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTest();
-    enterFullscreen();
-    setupAntiCheat();
-    
-    return () => {
-      exitFullscreen();
-    };
-  }, [testId]);
-
-  useEffect(() => {
-    if (timeLeft <= 0 && test) {
-      submitTest();
-      return;
+  const submitTest = useCallback(async (auto = false) => {
+    if (!test || !user) return;
+    if (hasSubmitted) return;
+    setHasSubmitted(true);
+    let finalScore: number | null = null;
+    // Try server submit first if attemptId exists
+    if (attemptId) {
+      try {
+        const payload = {
+          attemptId,
+          answers: answers.map(a => ({ questionId: a.questionId, answer: String(a.selectedOption) })),
+          suspiciousEvents,
+        } as Record<string, any>;
+        const API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
+        const resp = await fetch(`${API_BASE}/tests/${testId}/submit`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (resp.ok && typeof data.score === 'number') {
+          finalScore = data.score;
+        }
+      } catch (e) {
+        // ignore
+      }
     }
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => Math.max(0, prev - 1));
-    }, 1000);
+    // If server didn't return a score, inform user — do NOT persist locally.
+    if (finalScore == null) {
+      toast.error('Failed to submit attempt to server. Please try again later.');
+    }
 
-    return () => clearInterval(timer);
-  }, [timeLeft, test]);
+    exitFullscreen();
+    if (auto) {
+      toast.error('Test auto-submitted due to malpractice.');
+    } else {
+      toast.success(`Test submitted!${finalScore != null ? ` Your score: ${finalScore}%` : ''}`);
+    }
+    navigate('/dashboard');
+  }, [test, user, hasSubmitted, attemptId, answers, suspiciousEvents, testId, navigate]);
 
-  const loadTest = async () => {
+  const loadTest = useCallback(async () => {
     try {
       const res = await apiGetTest(String(testId));
       const t = res?.test;
       if (!t) throw new Error('Test not found');
       const qs = Array.isArray(t.questions) ? t.questions : [];
-      const mappedQs = qs.map((q: any) => ({ id: String(q.id || q._id || ''), text: String(q.text || ''), options: (q.options || []).map((o: any) => String(o)) }));
+      const mappedQs = qs.map((q: Record<string, any>) => ({ id: String(q.id || q._id || ''), text: String(q.text || ''), options: (q.options || []).map((o: string) => String(o)) }));
       setTest(t);
       setQuestions(mappedQs);
       const durationMin = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
@@ -68,36 +88,15 @@ const TakeTest = () => {
         // Non-blocking: allow offline/local flow
       }
     } catch (e) {
-      // Fallback to legacy local storage path
-      const allTests = JSON.parse(localStorage.getItem('tests') || '[]');
-      const foundTest = allTests.find((t: Test) => t.id === testId);
-      if (!foundTest) {
-        toast.error('Test not found');
-        navigate('/dashboard');
-        return;
-      }
-      const allQuestions = JSON.parse(localStorage.getItem('questions') || '[]');
-      const testQuestions = allQuestions.filter((q: Question) => foundTest.questions.includes(q.id));
-      setTest(foundTest);
-      setQuestions(testQuestions.map((q: any) => ({ id: q.id, text: q.text, options: q.options })));
-      setTimeLeft(foundTest.durationMinutes * 60);
-      setAnswers(testQuestions.map((q: Question) => ({ questionId: q.id, selectedOption: -1, timeTakenSec: 0 })));
+      // Server call failed — do not use localStorage. Inform the user and redirect.
+      console.error('Failed to load test from server', e);
+      toast.error('Unable to load test. Please check your connection and try again.');
+      navigate('/dashboard');
+      return;
     }
-  };
+  }, [testId, navigate]);
 
-  const enterFullscreen = () => {
-    document.documentElement.requestFullscreen?.();
-    setIsFullscreen(true);
-  };
-
-  const exitFullscreen = () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.();
-    }
-    setIsFullscreen(false);
-  };
-
-  const setupAntiCheat = () => {
+  const setupAntiCheat = useCallback(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
         logSuspiciousEvent('tab-switch');
@@ -111,13 +110,9 @@ const TakeTest = () => {
       }
     };
 
-    const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) {
-        logSuspiciousEvent('fullscreen-exit');
-        toast.error('Please stay in fullscreen mode');
-        setTimeout(enterFullscreen, 100);
-      }
-    };
+    // Fullscreen enforcement removed to allow students to take tests without fullscreen.
+    // If you want to re-enable, add a test-level flag (e.g. test.meta.requireFullscreen) and
+    // conditionally register a 'fullscreenchange' handler here.
 
     const handleCopy = (e: ClipboardEvent) => {
       e.preventDefault();
@@ -181,8 +176,7 @@ const TakeTest = () => {
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('copy', handleCopy);
     document.addEventListener('paste', handlePaste);
     document.addEventListener('cut', handleCut);
@@ -201,8 +195,7 @@ const TakeTest = () => {
     }, 1000);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('cut', handleCut);
@@ -212,6 +205,40 @@ const TakeTest = () => {
       document.removeEventListener('selectstart', handleSelectStart);
       clearInterval(devToolsCheck);
     };
+  }, [hasSubmitted, submitTest]);
+
+  useEffect(() => {
+    loadTest();
+    setupAntiCheat();
+    
+    return () => {
+      // do not force exit fullscreen on unmount; allow user's choice
+    };
+  }, [testId, loadTest, setupAntiCheat]);
+
+  useEffect(() => {
+    if (timeLeft <= 0 && test) {
+      submitTest();
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => Math.max(0, prev - 1));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timeLeft, test, submitTest]);
+
+  const enterFullscreen = () => {
+    document.documentElement.requestFullscreen?.();
+    setIsFullscreen(true);
+  };
+
+  const exitFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+    }
+    setIsFullscreen(false);
   };
 
   const logSuspiciousEvent = (type: SuspiciousEvent['type']) => {
@@ -240,61 +267,6 @@ const TakeTest = () => {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(currentQuestionIndex - 1);
     }
-  };
-
-  const submitTest = async (auto = false) => {
-    if (!test || !user) return;
-    if (hasSubmitted) return;
-    setHasSubmitted(true);
-    let finalScore: number | null = null;
-    // Try server submit first if attemptId exists
-    if (attemptId) {
-      try {
-        const payload = {
-          attemptId,
-          answers: answers.map(a => ({ questionId: a.questionId, answer: String(a.selectedOption) })),
-          suspiciousEvents,
-        } as any;
-        const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
-        const resp = await fetch(`${API_BASE}/tests/${testId}/submit`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        if (resp.ok && typeof data.score === 'number') {
-          finalScore = data.score;
-        }
-      } catch {}
-    }
-
-    // Fallback to local score if server did not score
-    if (finalScore == null) {
-      // We don't have correct answers from server; fallback to 0 or simple heuristic (0)
-      finalScore = 0;
-      // Optionally, persist attempt locally for UI
-      const attempt: Attempt = {
-        id: crypto.randomUUID(),
-        testId: String(test.id || testId),
-        studentId: user.id,
-        answers: answers as any,
-        score: finalScore,
-        startedAt: startTime,
-        finishedAt: new Date().toISOString(),
-        suspiciousEvents,
-      };
-      const allAttempts = JSON.parse(localStorage.getItem('attempts') || '[]');
-      localStorage.setItem('attempts', JSON.stringify([...allAttempts, attempt]));
-    }
-
-    exitFullscreen();
-    if (auto) {
-      toast.error('Test auto-submitted due to malpractice.');
-    } else {
-      toast.success(`Test submitted!${finalScore != null ? ` Your score: ${finalScore}%` : ''}`);
-    }
-    navigate('/dashboard');
   };
 
   if (!test || questions.length === 0) {

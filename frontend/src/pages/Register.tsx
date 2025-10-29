@@ -41,7 +41,7 @@ const Register = () => {
       return;
     }
 
-    const payload: any = {
+    const payload: Record<string, any> = {
       ...formData,
       role,
     };

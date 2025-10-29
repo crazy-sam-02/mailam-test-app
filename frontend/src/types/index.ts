@@ -29,7 +29,7 @@ export interface Test {
   description: string;
   assignedTo: {
     semester: string;
-    department?: string;
+    departments: string[];
   };
   questions: string[]; // Question IDs
   durationMinutes: number;
@@ -56,6 +56,7 @@ export interface SuspiciousEvent {
 export interface Attempt {
   id: string;
   testId: string;
+  testTitle?: string;
   studentId: string;
   answers: Answer[];
   score: number;

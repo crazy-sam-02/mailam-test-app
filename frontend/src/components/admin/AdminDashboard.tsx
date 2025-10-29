@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, Plus, Users, FileText, BarChart, Sparkles } from 'lucide-react';
 import { Test, User, Attempt } from '@/types';
-import { apiGetTests, apiGetAttemptsForTest } from '@/lib/api';
+import { apiGetTests, apiGetAttemptsForTest, apiGetStudents } from '@/lib/api';
 import CreateQuizDialog from './CreateQuizDialog';
 import QuizList from './QuizList';
 import StudentList from './StudentList';
@@ -15,6 +15,7 @@ import TestAttendanceView from './TestAttendanceView';
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const [tests, setTests] = useState<Test[]>([]);
+  const [myTests, setMyTests] = useState<Test[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [showCreateQuiz, setShowCreateQuiz] = useState(false);
@@ -22,27 +23,13 @@ const AdminDashboard = () => {
   // (moved above loadData to avoid block-scoped error)
   const [testPoints, setTestPoints] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    loadData();
-  }, [user]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     // Fallbacks from localStorage
+    // No localStorage fallback — always load from server for consistency
     const loadLocal = () => {
-      const allTests = JSON.parse(localStorage.getItem('tests') || '[]');
-      const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-      const allAttempts = JSON.parse(localStorage.getItem('attempts') || '[]');
-  
-      const myTests = allTests.filter((t: Test) => t.createdBy === user?.id);
-      const myStudents = allUsers.filter(
-        (u: User) =>
-          u.role === 'student' &&
-          u.semester === user?.semester
-      );
-  
-      setTests(myTests);
-      setStudents(myStudents);
-      setAttempts(allAttempts);
+      setTests([]);
+      setStudents([]);
+      setAttempts([]);
     };
 
     try {
@@ -51,14 +38,15 @@ const AdminDashboard = () => {
       const serverTests = Array.isArray(resp?.tests) ? resp.tests : [];
       const mapped: Test[] = serverTests
         .filter(Boolean)
-        .map((t: any) => {
+        .map((t: Record<string, any>) => {
           const id = String(t._id || t.id);
           const title = String(t.title || 'Untitled');
           const description = String(t.description || '');
           const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
           const assigned = t.assignedTo || {};
           const semester = String(assigned.semester || user?.semester || '');
-          const department = String(assigned.dept || assigned.department || user?.dept || '');
+          const depts = assigned.departments || assigned.department || assigned.dept;
+          const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
           // Defaults for UI compatibility
           const durationMinutes = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
           const attemptsAllowed = Number.isFinite(t.attemptsAllowed) ? t.attemptsAllowed : 1;
@@ -74,7 +62,7 @@ const AdminDashboard = () => {
             id,
             title,
             description,
-            assignedTo: { semester, department },
+            assignedTo: { semester, departments },
             questions: Array.from({ length: questionsCount }, (_, i) => `${id}-q${i}`),
             durationMinutes,
             attemptsAllowed,
@@ -84,11 +72,11 @@ const AdminDashboard = () => {
             endAt,
             createdBy,
           } as Test;
-        })
-        // Only show tests created by this admin in "My Tests"
-        .filter(t => String(t.createdBy) === String(user?.id || ''));
+        });
 
       setTests(mapped);
+      const myMappedTests = mapped.filter(t => String(t.createdBy) === String(user?.id || ''));
+      setMyTests(myMappedTests);
 
       // Build testId to total points map
       const pointsMap: Record<string, number> = {};
@@ -106,37 +94,50 @@ const AdminDashboard = () => {
           const id = String(t._id || t.id);
           const r = await apiGetAttemptsForTest(id, 1, 200);
           const arr = Array.isArray(r?.attempts) ? r.attempts : [];
+          const title = String(t.title || 'Untitled');
           for (const a of arr) {
-            allAttempts.push({
-              id: String(a._id || a.attemptId || crypto.randomUUID()),
-              testId: id,
-              studentId: String(a.student?._id || a.student || ''),
-              answers: Array.isArray(a.answers) ? a.answers.map((x: any) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
-              score: Number(a.score || 0),
-              startedAt: String(a.startedAt || ''),
-              finishedAt: String(a.submittedAt || a.finishedAt || ''),
-              suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
-            });
-          }
+              allAttempts.push({
+                id: String(a._id || a.attemptId || crypto.randomUUID()),
+                testId: id,
+                testTitle: title,
+                studentId: String(a.student?._id || a.student || ''),
+                answers: Array.isArray(a.answers) ? a.answers.map((x: Record<string, any>) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
+                score: Number(a.score || 0),
+                startedAt: String(a.startedAt || ''),
+                finishedAt: String(a.submittedAt || a.finishedAt || ''),
+                suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
+              });
+            }
         }
         setAttempts(allAttempts);
       } catch {
         // ignore; will fallback to local attempts below
       }
-  // Add state for test points
-  const [testPoints, setTestPoints] = useState<Record<string, number>>({});
 
-      // Keep existing local lists for now
-      const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-      const allAttempts = JSON.parse(localStorage.getItem('attempts') || '[]');
-      const myStudents = allUsers.filter((u: User) => u.role === 'student' && u.semester === user?.semester);
-      setStudents(myStudents);
-      if (allAttempts.length && attempts.length === 0) setAttempts(allAttempts);
+      try {
+        const { students: allStudents } = await apiGetStudents({ limit: 1000 });
+        const adminDept = user?.dept;
+        if (adminDept) {
+          const filtered = Array.isArray(allStudents)
+            ? allStudents.filter((s: User) => String(s.dept || (s as Record<string, any>).department || '') === String(adminDept))
+            : [];
+          setStudents(filtered);
+        } else {
+          setStudents(allStudents || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch students', error);
+      }
     } catch (e) {
-      // If request fails (server down), fallback to local
+      // If request fails, clear lists and show a console message (no localStorage usage)
+      console.error('Failed to load admin data from server', e);
       loadLocal();
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -150,7 +151,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* Glassmorphism header */}
-      <header className="relative border-b border-white/10 backdrop-blur-xl bg-white/5">
+      <header className="relative border-b border-white/10 backdrop-blur-xl bg-.white/5">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
@@ -237,7 +238,7 @@ const AdminDashboard = () => {
                 Create New Test
               </Button>
             </div>
-            <QuizList tests={tests} onUpdate={loadData} />
+            <QuizList tests={myTests} onUpdate={loadData} />
           </TabsContent>
 
           <TabsContent value="students">

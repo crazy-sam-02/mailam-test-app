@@ -17,25 +17,58 @@ const upload = multer({ dest: 'uploads/' });
 // list tests - admins see all; students only see tests for their department
 router.get('/', requireAuth, async (req, res, next) => {
   try {
-    if (req.user.role === 'admin') {
-      // Always populate createdBy so frontend can filter reliably
-      const tests = await Test.find().select('-questions.correctAnswer').populate('createdBy', '_id').lean();
-      // Coerce createdBy to string for all tests
-      for (const t of tests) {
-        if (t.createdBy && typeof t.createdBy === 'object' && t.createdBy._id) {
-          t.createdBy = t.createdBy._id.toString();
-        } else if (t.createdBy) {
-          t.createdBy = String(t.createdBy);
-        }
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit || '100', 10)), 500);
+    const skip = (page - 1) * limit;
+
+    // Helper to normalize populated createdBy into id/name/email fields
+    const normalizeCreatedBy = (t) => {
+      if (t.createdBy && typeof t.createdBy === 'object' && t.createdBy._id) {
+        const id = t.createdBy._id.toString();
+        const name = t.createdBy.name || '';
+        const email = t.createdBy.email || '';
+        t.createdBy = id;
+        t.createdByName = name;
+        t.createdByEmail = email;
+      } else if (t.createdBy) {
+        t.createdBy = String(t.createdBy);
       }
-      return res.json({ tests });
+    };
+
+    if (req.user.role === 'admin') {
+      // If admin/staff has a department, limit visibility to their department (staff view)
+      const adminDept = req.user.dept || req.user.department;
+      if (adminDept) {
+        const query = { 'assignedTo.departments': adminDept };
+        const [tests, total] = await Promise.all([
+          Test.find(query).select('-questions.correctAnswer').populate('createdBy', '_id name email').skip(skip).limit(limit).lean(),
+          Test.countDocuments(query),
+        ]);
+        tests.forEach(normalizeCreatedBy);
+        return res.json({ tests, total, page, limit });
+      }
+      // if admin has no dept (super-admin), return all tests (paginated)
+      const query = {};
+      const [tests, total] = await Promise.all([
+        Test.find(query).select('-questions.correctAnswer').populate('createdBy', '_id name email').skip(skip).limit(limit).lean(),
+        Test.countDocuments(query),
+      ]);
+      tests.forEach(normalizeCreatedBy);
+      return res.json({ tests, total, page, limit });
     }
+
+    // student view: must have dept
     const dept = req.user.dept || req.user.department;
     if (!dept) {
       return res.status(400).json({ error: 'Your profile is missing department' });
     }
-    const tests = await Test.find({ 'assignedTo.dept': dept }).select('-questions.correctAnswer').lean();
-    return res.json({ tests });
+    const query = { 'assignedTo.departments': dept };
+    const [tests, total] = await Promise.all([
+      Test.find(query).select('-questions.correctAnswer').skip(skip).limit(limit).lean(),
+      Test.countDocuments(query),
+    ]);
+    // student shouldn't see correctAnswer, so no populate needed
+    return res.json({ tests, total, page, limit });
   } catch (err) { next(err); }
 });
 
@@ -45,16 +78,17 @@ router.post('/', requireAuth, requireAdmin, async (req, res, next) => {
     const { title, description, questions } = req.body || {};
     const meta = req.body?.meta || {};
     const assignedRaw = req.body?.assignedTo || meta?.assignedTo || {};
-    const dept = assignedRaw.dept || assignedRaw.department;
+    const depts = assignedRaw.departments || assignedRaw.department || assignedRaw.dept;
     const semester = assignedRaw.semester || assignedRaw.sem;
     const section = assignedRaw.section;
     const year = assignedRaw.year;
+    const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
 
     if (!title || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: 'Missing title or questions' });
     }
-    if (!dept) {
-      return res.status(400).json({ error: 'assignedTo.dept (department) is required' });
+    if (departments.length === 0) {
+      return res.status(400).json({ error: 'assignedTo.departments is required' });
     }
 
     // Normalize questions to expected shape
@@ -69,7 +103,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res, next) => {
       title: String(title).trim(),
       description: description ? String(description) : '',
       questions: normQuestions,
-      assignedTo: { dept: String(dept).trim(), semester: semester ? String(semester) : undefined, section, year },
+      assignedTo: { departments, semester: semester ? String(semester) : undefined, section, year },
       durationMinutes: Number.isFinite(req.body?.durationMinutes) ? req.body.durationMinutes : (Number.isFinite(meta.durationMinutes) ? meta.durationMinutes : 30),
       attemptsAllowed: Number.isFinite(req.body?.attemptsAllowed) ? req.body.attemptsAllowed : (Number.isFinite(meta.attemptsAllowed) ? meta.attemptsAllowed : 1),
       shuffleQuestions: typeof req.body?.shuffleQuestions === 'boolean' ? req.body.shuffleQuestions : !!meta.shuffleQuestions,
@@ -80,7 +114,35 @@ router.post('/', requireAuth, requireAdmin, async (req, res, next) => {
       createdByModel: 'Admin',
     });
     await test.save();
-    res.status(201).json({ test });
+    // Ensure createdBy is always a string in response
+    let testObj = test.toObject();
+    if (testObj.createdBy && typeof testObj.createdBy === 'object' && testObj.createdBy._id) {
+      testObj.createdBy = testObj.createdBy._id.toString();
+    } else if (testObj.createdBy) {
+      testObj.createdBy = String(testObj.createdBy);
+    }
+    res.status(201).json({ test: testObj });
+  } catch (err) { next(err); }
+});
+
+// delete test (admin)
+router.delete('/:id', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    console.log('[DELETE] request for test id:', req.params.id, 'by user:', req.user && req.user._id);
+    const test = await Test.findById(req.params.id);
+    console.log('[DELETE] found test:', !!test);
+    if (!test) return res.status(404).json({ error: 'Test not found' });
+    // Only allow the admin who created the test or a super-admin (no dept) to delete it
+    const userDept = req.user.dept || req.user.department;
+    if (userDept) {
+      if (!test.createdBy || String(test.createdBy) !== String(req.user._id)) {
+        return res.status(403).json({ error: 'You are not authorized to delete this test' });
+      }
+    }
+    // Delete associated attempts and the test
+    await Attempt.deleteMany({ test: test._id });
+    await test.deleteOne();
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 
@@ -142,12 +204,20 @@ router.get('/:id', requireAuth, async (req, res, next) => {
   try {
     const test = await Test.findById(req.params.id).lean();
     if (!test) return res.status(404).json({ error: 'Not found' });
+    const userDept = req.user.dept || req.user.department;
     if (req.user.role !== 'admin') {
-      const dept = req.user.dept || req.user.department;
-      if (!dept || !test.assignedTo || String(test.assignedTo.dept) !== String(dept)) {
+      if (!userDept || !test.assignedTo || !Array.isArray(test.assignedTo.departments) || !test.assignedTo.departments.includes(userDept)) {
         return res.status(403).json({ error: 'Not authorized for this test' });
       }
       test.questions = (test.questions || []).map(q => ({ id: q._id?.toString?.() || '', text: q.text, options: q.options }));
+    } else {
+      // admin/staff: if they have a dept, restrict to that dept
+      if (userDept) {
+        if (!test.assignedTo || !Array.isArray(test.assignedTo.departments) || !test.assignedTo.departments.includes(userDept)) {
+          return res.status(403).json({ error: 'Not authorized for this test' });
+        }
+      }
+      // admins can view full test
     }
     res.json({ test });
   } catch (err) { next(err); }
@@ -158,17 +228,18 @@ router.post('/:id/start', requireAuth, async (req, res, next) => {
   try {
     const test = await Test.findById(req.params.id).lean();
     if (!test) return res.status(404).json({ error: 'Test not found' });
-    if (req.user.role !== 'admin') {
-      const dept = req.user.dept || req.user.department;
-      if (!dept || !test.assignedTo || String(test.assignedTo.dept) !== String(dept)) {
+    const userDept = req.user.dept || req.user.department;
+    // Enforce department match for students and for admin/staff that have a dept
+    if (req.user.role !== 'admin' || userDept) {
+      if (!userDept || !test.assignedTo || !Array.isArray(test.assignedTo.departments) || !test.assignedTo.departments.includes(userDept)) {
         return res.status(403).json({ error: 'Not authorized for this test' });
       }
-      // Enforce attempts allowed (count submitted attempts)
-      const priorAttempts = await Attempt.countDocuments({ test: test._id, student: req.user._id, submittedAt: { $ne: null } });
-      const limit = Number.isFinite(test.attemptsAllowed) ? test.attemptsAllowed : 1;
-      if (priorAttempts >= limit) {
-        return res.status(400).json({ error: 'No attempts left' });
-      }
+    }
+    // Enforce attempts allowed (count submitted attempts)
+    const priorAttempts = await Attempt.countDocuments({ test: test._id, student: req.user._id, submittedAt: { $ne: null } });
+    const limit = Number.isFinite(test.attemptsAllowed) ? test.attemptsAllowed : 1;
+    if (priorAttempts >= limit) {
+      return res.status(400).json({ error: 'No attempts left' });
     }
     const attemptId = uuidv4();
     const attempt = new Attempt({ test: test._id, student: req.user._id, attemptId, answers: [] });
@@ -206,6 +277,15 @@ router.post('/:id/submit', requireAuth, async (req, res, next) => {
 // attempts for a test (admin)
 router.get('/:id/attempts', requireAuth, requireAdmin, async (req, res, next) => {
   try {
+    const test = await Test.findById(req.params.id).lean();
+    if (!test) return res.status(404).json({ error: 'Test not found' });
+
+    // Department check for admins
+    const adminDept = req.user.dept || req.user.department;
+    if (adminDept && (!test.assignedTo || !test.assignedTo.departments.includes(adminDept))) {
+      return res.status(403).json({ error: 'Not authorized for this test' });
+    }
+
     const page = parseInt(req.query.page || '1', 10);
     const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
     const skip = (page - 1) * limit;

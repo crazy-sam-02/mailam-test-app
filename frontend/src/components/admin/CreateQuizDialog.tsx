@@ -37,8 +37,8 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
   const [questionIds, setQuestionIds] = useState<string[]>([]);
 
   // Normalize various incoming JSON shapes to our internal shape
-  const normalizeQuestionsInput = (raw: any): Omit<Question, 'id' | 'createdBy' | 'createdAt'>[] => {
-    const arr: any[] = Array.isArray(raw) ? raw : (Array.isArray(raw?.questions) ? raw.questions : []);
+  const normalizeQuestionsInput = (raw: Record<string, any>): Omit<Question, 'id' | 'createdBy' | 'createdAt'>[] => {
+    const arr: Record<string, any>[] = Array.isArray(raw) ? raw : (Array.isArray(raw?.questions) ? raw.questions : []);
     if (!Array.isArray(arr)) return [];
 
     const toIndexFromLetter = (s: string) => {
@@ -66,7 +66,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
     };
 
     return arr
-      .map((q: any) => {
+      .map((q: Record<string, any>) => {
         // Case A: already in our shape
         if (q?.text && Array.isArray(q?.options)) {
           const options = cleanOptions(q.options);
@@ -114,7 +114,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
 
         return null;
       })
-      .filter((q: any) => q && q.text && Array.isArray(q.options) && q.options.length === 4);
+      .filter((q: Record<string, any> | null): q is Record<string, any> => q && q.text && Array.isArray(q.options) && q.options.length === 4);
   };
 
   const addQuestion = () => {
@@ -174,7 +174,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
         if (!data?.questions || !Array.isArray(data.questions) || data.questions.length === 0) {
           throw new Error('No questions extracted');
         }
-        setQuestions(data.questions.map((q: any) => ({
+        setQuestions(data.questions.map((q: Record<string, any>) => ({
           text: q.text,
           options: q.options,
           correctOptionIndex: typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex : 0,
@@ -202,7 +202,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
       if (!res.ok) throw new Error(data?.error || 'Upload failed');
       // Support both shapes: { questions } or { questionIds, count, method }
       if (Array.isArray(data.questions) && data.questions.length) {
-        const added = data.questions.map((q: any) => ({
+        const added = data.questions.map((q: Record<string, any>) => ({
           text: String(q.text || '').trim(),
           options: Array.isArray(q.options) ? q.options.slice(0, 4).map((o: any) => String(o)) : ['Option','Option','Option','Option'],
           correctOptionIndex: typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex : 0,
@@ -277,7 +277,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
             attemptsAllowed: testData.attemptsAllowed,
             assignedTo: { semester: testData.semester, department: testData.department },
           }
-        } as any;
+        } as Record<string, any>;
         const resp = await fetch((import.meta as any).env?.VITE_API_BASE_URL ? `${(import.meta as any).env.VITE_API_BASE_URL}/tests` : 'http://localhost:4000/api/tests', {
           method: 'POST',
           credentials: 'include',
@@ -291,38 +291,8 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
         onOpenChange(false);
         resetForm();
       } catch (err: any) {
-        // Fallback to localStorage so user can proceed without backend
-        const savedQuestions = questions.map(q => ({
-          ...q,
-          id: crypto.randomUUID(),
-          createdBy: user!.id,
-          createdAt: new Date().toISOString(),
-        }));
-        const allQuestions = JSON.parse(localStorage.getItem('questions') || '[]');
-        localStorage.setItem('questions', JSON.stringify([...allQuestions, ...savedQuestions]));
-        const test: Test = {
-          id: crypto.randomUUID(),
-          title: testData.title,
-          description: testData.description,
-          assignedTo: {
-            semester: testData.semester,
-            department: testData.department,
-          },
-          questions: savedQuestions.map(q => q.id),
-          durationMinutes: testData.durationMinutes,
-          attemptsAllowed: testData.attemptsAllowed,
-          shuffleQuestions: true,
-          shuffleOptions: true,
-          startAt: new Date().toISOString(),
-          endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          createdBy: user!.id,
-        };
-        const allTests = JSON.parse(localStorage.getItem('tests') || '[]');
-        localStorage.setItem('tests', JSON.stringify([...allTests, test]));
-        toast.success('Test saved locally (offline mode)');
-        onSuccess();
-        onOpenChange(false);
-        resetForm();
+        // Do not use localStorage for offline save. Surface the error to the admin.
+        toast.error(err?.message || 'Failed to create test on server. Please try again later.');
       }
     })();
   };
@@ -438,7 +408,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
             <div className="space-y-3">
               <Label>Question Creation Mode</Label>
               <Tabs value={creationMode} onValueChange={(v) => setCreationMode(v as any)}>
-                <TabsList className="grid w-full grid-cols-4 backdrop-blur-sm bg-white/5">
+                 <TabsList className="grid w-full grid-cols-3 backdrop-blur-sm bg-white/5">
                   <TabsTrigger value="manual" className="flex items-center gap-2">
                     <Pencil className="w-4 h-4" />
                     Manual
@@ -446,10 +416,6 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                   <TabsTrigger value="json" className="flex items-center gap-2">
                     <FileJson className="w-4 h-4" />
                     JSON Upload
-                  </TabsTrigger>
-                  <TabsTrigger value="document" className="flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Document
                   </TabsTrigger>
                   <TabsTrigger value="upload" className="flex items-center gap-2">
                     <Upload className="w-4 h-4" />
@@ -503,24 +469,6 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                   </Card>
                 </TabsContent>
 
-                <TabsContent value="document" className="space-y-3">
-                  <Card className="backdrop-blur-sm bg-white/5 border-white/20">
-                    <CardContent className="pt-6 space-y-4">
-                      <p className="text-sm text-muted-foreground">
-                        Upload .doc, .docx, or .pdf files for AI-powered question extraction
-                      </p>
-                      <Input
-                        type="file"
-                        accept=".doc,.docx,.pdf"
-                        onChange={handleDocumentUpload}
-                        className="backdrop-blur-sm bg-white/5 border-white/20"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Note: AI parsing requires backend integration
-                      </p>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
 
                 <TabsContent value="upload" className="space-y-3">
                   <Card className="backdrop-blur-sm bg-white/5 border-white/20">

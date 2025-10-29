@@ -66,6 +66,8 @@ start();
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/tests', require('./routes/tests'));
   app.use('/api/attempts', require('./routes/attempts'));
+  // sync endpoints for offline clients
+  app.use('/api/sync', require('./routes/sync'));
 
   // basic health
   app.get('/', (req, res) => res.send({ ok: true }));
