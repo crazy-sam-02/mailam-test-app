@@ -36,12 +36,22 @@ router.get('/', requireAuth, async (req, res, next) => {
     };
 
     if (req.user.role === 'admin') {
-      // If admin/staff has a department, limit visibility to their department (staff view)
+      // If admin/staff has a department, show tests for their department OR tests they created
       const adminDept = req.user.dept || req.user.department;
       if (adminDept) {
-        const query = { 'assignedTo.departments': adminDept };
+        const query = {
+          $or: [
+            { 'assignedTo.departments': adminDept },
+            { createdBy: req.user._id },
+          ],
+        };
         const [tests, total] = await Promise.all([
-          Test.find(query).select('-questions.correctAnswer').populate('createdBy', '_id name email').skip(skip).limit(limit).lean(),
+          Test.find(query)
+            .select('-questions.correctAnswer')
+            .populate('createdBy', '_id name email')
+            .skip(skip)
+            .limit(limit)
+            .lean(),
           Test.countDocuments(query),
         ]);
         tests.forEach(normalizeCreatedBy);
@@ -50,7 +60,12 @@ router.get('/', requireAuth, async (req, res, next) => {
       // if admin has no dept (super-admin), return all tests (paginated)
       const query = {};
       const [tests, total] = await Promise.all([
-        Test.find(query).select('-questions.correctAnswer').populate('createdBy', '_id name email').skip(skip).limit(limit).lean(),
+        Test.find(query)
+          .select('-questions.correctAnswer')
+          .populate('createdBy', '_id name email')
+          .skip(skip)
+          .limit(limit)
+          .lean(),
         Test.countDocuments(query),
       ]);
       tests.forEach(normalizeCreatedBy);
@@ -58,11 +73,20 @@ router.get('/', requireAuth, async (req, res, next) => {
     }
 
     // student view: must have dept
-    const dept = req.user.dept || req.user.department;
-    if (!dept) {
+    const deptRaw = req.user.dept || req.user.department;
+    if (!deptRaw) {
       return res.status(400).json({ error: 'Your profile is missing department' });
     }
-    const query = { 'assignedTo.departments': dept };
+    const dept = String(deptRaw).trim();
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Support legacy shapes (assignedTo.department or assignedTo.dept) and be case-insensitive
+    const query = {
+      $or: [
+        { 'assignedTo.departments': { $in: [dept, dept.toUpperCase(), dept.toLowerCase()] } },
+        { 'assignedTo.department': { $regex: `^${escapeRegex(dept)}$`, $options: 'i' } },
+        { 'assignedTo.dept': { $regex: `^${escapeRegex(dept)}$`, $options: 'i' } },
+      ]
+    };
     const [tests, total] = await Promise.all([
       Test.find(query).select('-questions.correctAnswer').skip(skip).limit(limit).lean(),
       Test.countDocuments(query),
@@ -206,14 +230,27 @@ router.get('/:id', requireAuth, async (req, res, next) => {
     if (!test) return res.status(404).json({ error: 'Not found' });
     const userDept = req.user.dept || req.user.department;
     if (req.user.role !== 'admin') {
-      if (!userDept || !test.assignedTo || !Array.isArray(test.assignedTo.departments) || !test.assignedTo.departments.includes(userDept)) {
+      const hasAccess = (() => {
+        if (!userDept || !test.assignedTo) return false;
+        const dept = String(userDept).trim();
+        const departments = Array.isArray(test.assignedTo.departments) ? test.assignedTo.departments : [];
+        const inArray = departments.some(d => String(d).toLowerCase() === dept.toLowerCase());
+        const singleDept = test.assignedTo.department ? String(test.assignedTo.department) : null;
+        const legacyDept = test.assignedTo.dept ? String(test.assignedTo.dept) : null;
+        const singleMatch = singleDept && singleDept.toLowerCase() === dept.toLowerCase();
+        const legacyMatch = legacyDept && legacyDept.toLowerCase() === dept.toLowerCase();
+        return inArray || singleMatch || legacyMatch;
+      })();
+      if (!hasAccess) {
         return res.status(403).json({ error: 'Not authorized for this test' });
       }
       test.questions = (test.questions || []).map(q => ({ id: q._id?.toString?.() || '', text: q.text, options: q.options }));
     } else {
-      // admin/staff: if they have a dept, restrict to that dept
+      // admin/staff: if they have a dept, allow if creator OR assigned to their dept
       if (userDept) {
-        if (!test.assignedTo || !Array.isArray(test.assignedTo.departments) || !test.assignedTo.departments.includes(userDept)) {
+        const departments = (test.assignedTo && Array.isArray(test.assignedTo.departments)) ? test.assignedTo.departments : [];
+        const isCreator = test.createdBy && String(test.createdBy) === String(req.user._id);
+        if (!isCreator && !departments.includes(userDept)) {
           return res.status(403).json({ error: 'Not authorized for this test' });
         }
       }
@@ -231,7 +268,14 @@ router.post('/:id/start', requireAuth, async (req, res, next) => {
     const userDept = req.user.dept || req.user.department;
     // Enforce department match for students and for admin/staff that have a dept
     if (req.user.role !== 'admin' || userDept) {
-      if (!userDept || !test.assignedTo || !Array.isArray(test.assignedTo.departments) || !test.assignedTo.departments.includes(userDept)) {
+      const dept = String(userDept || '').trim();
+      const departments = (test.assignedTo && Array.isArray(test.assignedTo.departments)) ? test.assignedTo.departments : [];
+      const inArray = departments.some(d => String(d).toLowerCase() === dept.toLowerCase());
+      const singleDept = test.assignedTo && test.assignedTo.department ? String(test.assignedTo.department) : null;
+      const legacyDept = test.assignedTo && test.assignedTo.dept ? String(test.assignedTo.dept) : null;
+      const singleMatch = singleDept && singleDept.toLowerCase() === dept.toLowerCase();
+      const legacyMatch = legacyDept && legacyDept.toLowerCase() === dept.toLowerCase();
+      if (!dept || !test.assignedTo || !(inArray || singleMatch || legacyMatch)) {
         return res.status(403).json({ error: 'Not authorized for this test' });
       }
     }
@@ -282,8 +326,12 @@ router.get('/:id/attempts', requireAuth, requireAdmin, async (req, res, next) =>
 
     // Department check for admins
     const adminDept = req.user.dept || req.user.department;
-    if (adminDept && (!test.assignedTo || !test.assignedTo.departments.includes(adminDept))) {
-      return res.status(403).json({ error: 'Not authorized for this test' });
+    if (adminDept) {
+      const departments = (test.assignedTo && Array.isArray(test.assignedTo.departments)) ? test.assignedTo.departments : [];
+      const isCreator = test.createdBy && String(test.createdBy) === String(req.user._id);
+      if (!isCreator && !departments.includes(adminDept)) {
+        return res.status(403).json({ error: 'Not authorized for this test' });
+      }
     }
 
     const page = parseInt(req.query.page || '1', 10);

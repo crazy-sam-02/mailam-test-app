@@ -151,7 +151,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* Glassmorphism header */}
-      <header className="relative border-b border-white/10 backdrop-blur-xl bg-.white/5">
+  <header className="relative border-b border-white/10 backdrop-blur-xl bg-white/5">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="space-y-1">

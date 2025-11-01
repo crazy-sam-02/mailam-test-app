@@ -1,6 +1,7 @@
 import type { User, Test, Attempt, Answer } from '@/types';
 
-const API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
+const HOST = (typeof window !== 'undefined' && (window as any).location?.hostname) ? (window as any).location.hostname : 'localhost';
+const API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || `http://${HOST}:8000/api`;
 
 async function request(path: string, opts: RequestInit = {}) {
   const res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -89,6 +90,11 @@ export async function apiGetAttemptsForTest(testId: string, page = 1, limit = 50
   return request(`/tests/${testId}/attempts?page=${page}&limit=${limit}`, { method: 'GET' });
 }
 
+// Admin: delete a test
+export async function apiDeleteTest(testId: string) {
+  return request(`/tests/${testId}`, { method: 'DELETE' });
+}
+
 export default {
   apiLogin,
   apiRegisterStudent,
@@ -105,4 +111,5 @@ export default {
   apiSubmitAttempt,
   apiGetMyAttempts,
   apiGetAttemptsForTest,
+  apiDeleteTest,
 };

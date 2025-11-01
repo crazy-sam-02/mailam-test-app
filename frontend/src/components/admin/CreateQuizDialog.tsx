@@ -164,13 +164,8 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
     form.append('file', file);
     (async () => {
       try {
-        const res = await fetch((import.meta as any).env?.VITE_API_BASE_URL ? `${(import.meta as any).env.VITE_API_BASE_URL}/tests/upload` : 'http://localhost:4000/api/tests/upload', {
-          method: 'POST',
-          credentials: 'include',
-          body: form,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || 'Upload failed');
+        const { apiUploadQuestions } = await import('@/lib/api');
+        const data = await apiUploadQuestions(form);
         if (!data?.questions || !Array.isArray(data.questions) || data.questions.length === 0) {
           throw new Error('No questions extracted');
         }
@@ -189,17 +184,15 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
 
   // Unified file upload handler (JSON / DOC / DOCX / PDF) using backend /tests/upload
   const handleFileUpload = async (file: File) => {
-    const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
+    const { apiUploadQuestions } = await import('@/lib/api');
     const form = new FormData();
     form.append('file', file);
     const loading = toast.loading(
       file.type === 'application/json' ? 'Processing JSON file...' : 'Extracting questions using AI...'
     );
     try {
-      const res = await fetch(`${API_BASE}/tests/upload`, { method: 'POST', credentials: 'include', body: form });
-      const data = await res.json();
+      const data = await apiUploadQuestions(form);
       toast.dismiss(loading);
-      if (!res.ok) throw new Error(data?.error || 'Upload failed');
       // Support both shapes: { questions } or { questionIds, count, method }
       if (Array.isArray(data.questions) && data.questions.length) {
         const added = data.questions.map((q: Record<string, any>) => ({
@@ -278,14 +271,8 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
             assignedTo: { semester: testData.semester, department: testData.department },
           }
         } as Record<string, any>;
-        const resp = await fetch((import.meta as any).env?.VITE_API_BASE_URL ? `${(import.meta as any).env.VITE_API_BASE_URL}/tests` : 'http://localhost:4000/api/tests', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data?.error || 'Failed to create test');
+        const { apiCreateTest } = await import('@/lib/api');
+        const data = await apiCreateTest(payload);
         toast.success('Test created successfully');
         onSuccess();
         onOpenChange(false);

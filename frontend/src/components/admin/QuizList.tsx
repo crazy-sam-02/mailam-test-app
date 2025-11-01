@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Clock, Users, Share2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiDeleteTest } from '@/lib/api';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,14 +31,7 @@ const QuizList = ({ tests, onUpdate }: QuizListProps) => {
 
   const handleDeleteTest = async (testId: string) => {
     try {
-      const API_BASE = 'http://localhost:4000/api';
-      const resp = await fetch(`${API_BASE}/tests/${testId}`,
-        {
-          method: 'DELETE',
-          credentials: 'include',
-        });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data?.error || 'Failed to delete test');
+      await apiDeleteTest(testId);
       toast.success('Test deleted successfully');
       onUpdate();
     } catch (err: any) {

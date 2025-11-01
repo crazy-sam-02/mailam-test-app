@@ -4,12 +4,14 @@ const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const path = require('path');
-const mongoose = require('mongoose');
+const connectDB = require('./config/db');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 async function main() {
+  await connectDB();
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
@@ -20,7 +22,7 @@ async function main() {
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl:"mongodb://127.0.0.1:27017/scholar_shield" }),
+    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI || 'mongodb://localhost:27017/scholar-shield-quiz' }),
     cookie: {
       httpOnly: true,
       secure: false,
@@ -28,20 +30,6 @@ async function main() {
       maxAge: 1000 * 60 * 60 * 24 * 7,
     }
   }));
-
-
-async function start() {
-  try {
-    await mongoose.connect("mongodb://127.0.0.1:27017/scholar_shield");
-    console.log('✅ Connected to MongoDB');
-  } catch (err) {
-    console.error('❌ Failed to start server', err);
-    process.exit(1);
-  }
-}
-start();
-
-
 
   // Allow multiple frontend origins (comma-separated)
   const ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173,http://localhost:8080')

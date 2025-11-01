@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Test, Question, Answer, SuspiciousEvent, Attempt } from '@/types';
-import { apiGetTest, apiStartAttempt } from '@/lib/api';
+import { apiGetTest, apiStartAttempt, apiSubmitAttempt } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -33,20 +33,13 @@ const TakeTest = () => {
     // Try server submit first if attemptId exists
     if (attemptId) {
       try {
-        const payload = {
+        const payload: { attemptId: string; answers: Answer[]; suspiciousEvents?: Record<string, any>[] } = {
           attemptId,
-          answers: answers.map(a => ({ questionId: a.questionId, answer: String(a.selectedOption) })),
+          answers: answers.map(a => ({ questionId: a.questionId, answer: String(a.selectedOption) })) as unknown as Answer[],
           suspiciousEvents,
-        } as Record<string, any>;
-        const API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
-        const resp = await fetch(`${API_BASE}/tests/${testId}/submit`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        if (resp.ok && typeof data.score === 'number') {
+        };
+        const data = await apiSubmitAttempt(String(testId), payload);
+        if (data && typeof data.score === 'number') {
           finalScore = data.score;
         }
       } catch (e) {
