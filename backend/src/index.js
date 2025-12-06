@@ -17,6 +17,39 @@ connectDB();
 
 async function main() {
 
+  // Move CORS to the top
+  // Allow multiple frontend origins (comma-separated)
+  const envOrigins = (process.env.FRONTEND_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'https://mailam-enginering-college-test.netlify.app'
+  ];
+  const ORIGINS = [...new Set([...envOrigins, ...defaultOrigins])];
+
+  const corsOptions = {
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+        return callback(null, true);
+      }
+
+      if (ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.log('Blocked CORS origin:', origin);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  };
+
+  app.use(cors(corsOptions));
+  app.options('*', cors(corsOptions));
+
   // Security & Performance middleware
   app.use(helmet());
   app.use(compression());
@@ -34,43 +67,11 @@ async function main() {
     store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // true in production
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' needed for cross-site if separated
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Must be 'none' for cross-site cookie
       maxAge: 1000 * 60 * 60 * 24 * 7,
     }
   }));
-
-  // Allow multiple frontend origins (comma-separated)
-  const envOrigins = (process.env.FRONTEND_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
-  const defaultOrigins = [
-    'http://localhost:5173',
-    'http://localhost:8080',
-    'https://mailam-enginering-college-test.netlify.app'
-  ];
-  const ORIGINS = [...new Set([...envOrigins, ...defaultOrigins])];
-
-  const corsOptions = {
-    origin(origin, callback) {
-      // allow same-origin or non-browser requests with no origin
-      if (!origin) return callback(null, true);
-
-      // Allow all localhost/127.0.0.1 origins for development
-      if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
-        return callback(null, true);
-      }
-
-      if (ORIGINS.includes(origin)) {
-        return callback(null, true);
-      }
-      console.log('Blocked CORS origin:', origin);
-      return callback(new Error('Not allowed by CORS'));
-    },
-    credentials: true,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-  };
-  app.use(cors(corsOptions));
-  app.options('*', cors(corsOptions));
 
   // routes
   app.use('/api/auth', require('./routes/auth'));
