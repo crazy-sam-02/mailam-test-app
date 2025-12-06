@@ -41,9 +41,14 @@ async function main() {
   }));
 
   // Allow multiple frontend origins (comma-separated)
-  const ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173,http://localhost:8080,https://mailam-enginering-college-test.netlify.app')
-    .split(',')
-    .map(s => s.trim());
+  const envOrigins = (process.env.FRONTEND_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'https://mailam-enginering-college-test.netlify.app'
+  ];
+  const ORIGINS = [...new Set([...envOrigins, ...defaultOrigins])];
+
   const corsOptions = {
     origin(origin, callback) {
       // allow same-origin or non-browser requests with no origin
