@@ -15,10 +15,12 @@ services:
         value: production
       - key: MONGO_URI
         sync: false
-      - key: SESSION_SECRET
-        generateValue: true
-      - key: FRONTEND_ORIGIN
+      - key: ALLOWED_ORIGINS
         sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
     autoDeploy: true
 
   # Frontend Service (Static Site)

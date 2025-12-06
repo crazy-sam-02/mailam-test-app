@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User } from '@/types';
-import api from '@/lib/api';
+import api, { setToken as apiSetToken, getToken as apiGetToken } from '@/lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -13,15 +13,20 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Start with no cached user (do not use localStorage for auth caching)
+  // Start with user null; hydrate from JWT if present
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Try to hydrate current user from backend (cookie-based session)
+  // Hydrate current user if a JWT is present
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        const token = apiGetToken();
+        if (!token) {
+          if (mounted) setLoading(false);
+          return;
+        }
         const res = await api.apiMe();
         if (!mounted) return;
         if (res?.user) {
@@ -38,12 +43,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      // Perform login to establish cookie session
-      await api.apiLogin(email, password);
-      // Always hydrate from /auth/me to avoid relying on response body
-      const me = await api.apiMe();
-      if (me?.user) {
-        setUser(me.user as User);
+      const res = await api.apiLogin(email, password);
+      if (res?.token && res?.user) {
+        apiSetToken(res.token);
+        setUser(res.user as User);
         return true;
       }
       return false;
@@ -56,20 +59,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     userData: Omit<User, 'id'> & { password: string }
   ): Promise<boolean> => {
     try {
-      // Note: backend requires a registration private key for student/admin registration.
-      // The frontend should collect and pass `privateKey` in userData when calling this.
       const payload = { ...userData } as any;
-      let res;
+      let res: any;
       if (payload.role === 'admin') {
-        // call admin registration endpoint
         res = await api.apiRegisterAdmin(payload);
       } else {
         res = await api.apiRegisterStudent(payload);
       }
-      // After registration, hydrate via /auth/me if server created a session
-      const me = await api.apiMe();
-      if (me?.user) {
-        setUser(me.user as User);
+      if (res?.token && res?.user) {
+        apiSetToken(res.token);
+        setUser(res.user as User);
         return true;
       }
       return false;
@@ -79,9 +78,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    api.apiLogout()
-      .catch(() => {})
-      .finally(() => setUser(null));
+    apiSetToken(null);
+    setUser(null);
   };
 
   return (

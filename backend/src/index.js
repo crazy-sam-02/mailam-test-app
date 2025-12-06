@@ -1,7 +1,5 @@
 // Server entry point - restart trigger
 const express = require('express');
-const session = require('express-session');
-const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
@@ -45,7 +43,7 @@ async function main() {
 
   const corsOptions = {
     origin: originFn,
-    credentials: true,
+    credentials: false,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
     exposedHeaders: ['Content-Length'],
@@ -63,35 +61,12 @@ async function main() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  const sessionSecret = process.env.SESSION_SECRET || 'dev-secret';
-  const isProd = String(process.env.NODE_ENV).toLowerCase() === 'production';
-
-  // Session setup
-  app.use(session({
-    name: 'sid',
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-    proxy: true,
-    cookie: {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    }
-  }));
-
-  // Debug Middleware (Must be AFTER session)
+  // Debug Middleware
   app.use((req, res, next) => {
     console.log(`[DEBUG] ${req.method} ${req.url}`);
     console.log(`[DEBUG] Origin: ${req.headers.origin}`);
     console.log(`[DEBUG] Protocol: ${req.protocol} | Secure: ${req.secure}`);
-    console.log(`[DEBUG] Cookies: ${req.headers.cookie ? 'Present' : 'Missing'}`);
-    console.log(`[DEBUG] Session ID: ${req.sessionID}`);
-    if (req.session) {
-      console.log(`[DEBUG] Session Data:`, JSON.stringify({ userId: req.session.userId, type: req.session.userType }));
-    }
+    console.log(`[DEBUG] Auth: ${req.headers.authorization ? 'Bearer' : 'None'}`);
     next();
   });
 
@@ -101,6 +76,15 @@ async function main() {
   app.use('/api/attempts', require('./routes/attempts'));
   // sync endpoints for offline clients
   app.use('/api/sync', require('./routes/sync'));
+
+  // CORS diagnostic endpoint
+  app.get('/api/cors-check', (req, res) => {
+    res.json({
+      ok: true,
+      originReceived: req.headers.origin || null,
+      allowedOrigins,
+    });
+  });
 
   // basic health
   app.get('/', (req, res) => res.send({ ok: true }));

@@ -10,8 +10,23 @@ if (!API_BASE.endsWith('/api')) {
   API_BASE = API_BASE.replace(/\/$/, '') + '/api';
 }
 
+// Simple token storage (localStorage) for JWT
+const TOKEN_KEY = 'authToken';
+export function setToken(token: string | null) {
+  if (typeof window === 'undefined') return;
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+export function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 async function request(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(opts.headers as Record<string, string> || {}) };
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'omit', headers });
   const text = await res.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch (e) { body = text; }
@@ -73,8 +88,11 @@ export async function apiCreateTest(payload: Record<string, any>) {
 }
 
 export async function apiUploadQuestions(formData: FormData) {
-  // upload uses multipart/form-data; do not set content-type header
-  const res = await fetch(`${API_BASE}/tests/upload`, { method: 'POST', credentials: 'include', body: formData });
+  // upload uses multipart/form-data; do not set content-type header; add Authorization
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/tests/upload`, { method: 'POST', credentials: 'omit', headers, body: formData });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Upload failed');
   return json;
@@ -109,6 +127,8 @@ export async function apiDeleteTest(testId: string) {
 }
 
 export default {
+  setToken,
+  getToken,
   apiLogin,
   apiRegisterStudent,
   apiRegisterAdmin,

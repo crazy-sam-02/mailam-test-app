@@ -1,7 +1,16 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const User = require('../models/User');
 const Admin = require('../models/Admin');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+
+function signToken(user, role) {
+  const payload = { sub: String(user._id), role };
+  const secret = process.env.JWT_SECRET || 'dev-jwt-secret';
+  const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
+  return jwt.sign(payload, secret, { expiresIn });
+}
 
 // Register student
 router.post('/register/student', async (req, res, next) => {
@@ -13,10 +22,11 @@ router.post('/register/student', async (req, res, next) => {
     if (existing) return res.status(400).json({ error: 'Email already registered' });
     const user = new User({ name, email, password, role: 'student', dept, semester, year, section, enrollmentNumber, registerNumber });
     await user.save();
-    // set session
-    req.session.userId = user._id;
-    req.session.userType = 'student';
-    res.json({ user: { id: user._id, name: user.name, email: user.email, role: user.role, dept: user.dept, semester: user.semester, year: user.year, section: user.section, enrollmentNumber: user.enrollmentNumber, registerNumber: user.registerNumber } });
+    const token = signToken(user, 'student');
+    res.json({
+      token,
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, dept: user.dept, semester: user.semester, year: user.year, section: user.section, enrollmentNumber: user.enrollmentNumber, registerNumber: user.registerNumber }
+    });
   } catch (err) {
     if (err && err.code === 11000) {
       return res.status(400).json({ error: 'there is error' });
@@ -48,9 +58,8 @@ router.post('/register/admin', async (req, res, next) => {
     }
     const admin = new Admin({ name, email, password, role: 'admin', dept, semester, year, section });
     await admin.save();
-    req.session.userId = admin._id;
-    req.session.userType = 'admin';
-    res.json({ user: { id: admin._id, name: admin.name, email: admin.email, role: admin.role, dept: admin.dept, semester: admin.semester, year: admin.year, section: admin.section } });
+    const token = signToken(admin, 'admin');
+    res.json({ token, user: { id: admin._id, name: admin.name, email: admin.email, role: admin.role, dept: admin.dept, semester: admin.semester, year: admin.year, section: admin.section } });
   } catch (err) {
     if (err && err.code === 11000) {
       return res.status(400).json({ error: 'Email already in use' });
@@ -60,7 +69,6 @@ router.post('/register/admin', async (req, res, next) => {
 });
 
 // List students (admin only)
-const { requireAuth, requireAdmin } = require('../middleware/auth');
 router.get('/students', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { semester, dept, section, page = '1', limit = '100' } = req.query;
@@ -129,34 +137,22 @@ router.post('/login', async (req, res, next) => {
     if (!account) return res.status(401).json({ error: 'Invalid credentials' });
     const ok = await account.comparePassword(password);
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
-    req.session.userId = account._id;
-    req.session.userType = type;
-
-    // Explicitly enforce cookie settings for cross-site usage
-    if (process.env.NODE_ENV === 'production') {
-      req.session.cookie.secure = true;
-      req.session.cookie.sameSite = 'none';
-      req.session.cookie.httpOnly = true;
-      req.session.cookie.maxAge = 24 * 60 * 60 * 1000; // 24 hours
-    }
+    const token = signToken(account, type);
     const base = { id: account._id, name: account.name, email: account.email, role: type === 'admin' ? 'admin' : (account.role || 'student') };
     if (type === 'admin') {
-      return res.json({ user: { ...base, dept: account.dept, semester: account.semester, year: account.year, section: account.section } });
+      return res.json({ token, user: { ...base, dept: account.dept, semester: account.semester, year: account.year, section: account.section } });
     }
-    return res.json({ user: { ...base, dept: account.dept, semester: account.semester, year: account.year, section: account.section, enrollmentNumber: account.enrollmentNumber, registerNumber: account.registerNumber } });
+    return res.json({ token, user: { ...base, dept: account.dept, semester: account.semester, year: account.year, section: account.section, enrollmentNumber: account.enrollmentNumber, registerNumber: account.registerNumber } });
   } catch (err) {
     next(err);
   }
 });
 
-// me
-router.get('/me', async (req, res, next) => {
+// me (JWT-protected)
+router.get('/me', requireAuth, async (req, res, next) => {
   try {
-    if (!req.session || !req.session.userId) return res.status(200).json({ user: null });
-    const type = req.session.userType === 'admin' ? 'admin' : 'student';
-    let user;
-    if (type === 'admin') user = await Admin.findById(req.session.userId).lean();
-    else user = await User.findById(req.session.userId).lean();
+    const type = req.user.role === 'admin' ? 'admin' : 'student';
+    const user = req.user;
     if (!user) return res.status(200).json({ user: null });
     const base = { id: user._id, name: user.name, email: user.email, role: type === 'admin' ? 'admin' : (user.role || 'student') };
     if (type === 'admin') return res.json({ user: { ...base, dept: user.dept, semester: user.semester, year: user.year, section: user.section } });
@@ -166,10 +162,9 @@ router.get('/me', async (req, res, next) => {
   }
 });
 
+// stateless logout (client discards token)
 router.post('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.json({ ok: true });
-  });
+  res.json({ ok: true });
 });
 
 module.exports = router;

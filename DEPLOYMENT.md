@@ -16,6 +16,8 @@ These variables must be set in your backend hosting environment (e.g., Render, R
 - `FRONTEND_ORIGIN`: Comma-separated list of frontend URLs (e.g., `https://mailam-enginering-college-test.netlify.app,https://your-custom-domain.com`).
 - `ALLOWED_ORIGINS`: Comma-separated list used by CORS; include Netlify domain(s), custom domain(s), and local dev (e.g., `http://localhost:5173`). Netlify/Render preview subdomains are also allowed by regex.
 - `NODE_ENV`: Set to `production`.
+- `JWT_SECRET`: Long random string to sign JWTs.
+- `JWT_EXPIRES_IN`: Token TTL (e.g., `7d`).
 
 #### Frontend (`frontend/.env`)
 
@@ -55,7 +57,7 @@ These variables must be set in your frontend hosting environment (e.g., Vercel, 
 
 1. **Verify API Connection**: Open the site, check the Network tab. Ensure requests go to your production backend URL, not `localhost`.
 2. **CORS Errors**: If you see CORS errors, ensure `ALLOWED_ORIGINS` (and `FRONTEND_ORIGIN`) include your exact frontend URL(s) with correct scheme (`https://`) and no trailing slash. Previews on Netlify/Render are supported automatically.
-3. **Credentials**: The frontend uses `credentials: 'include'`. On production, cookies are set with `SameSite=none; Secure`. Ensure you are on HTTPS for cookies to work.
+3. **Auth (JWT)**: The app now uses JWT in the `Authorization: Bearer <token>` header. No cookies are required. Ensure `JWT_SECRET` is set in the backend environment.
 4. **Database**: Ensure your IP whitelist on MongoDB Atlas (if used) allows connections from your hosting provider (allow `0.0.0.0/0` if unsure).
 
 ## SEO & Performance Features
