@@ -38,7 +38,9 @@ async function main() {
   app.options('/*', (req, res) => res.sendStatus(200));
 
   // Security & Performance middleware
-  app.use(helmet());
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }));
   app.use(compression());
 
   app.use(express.json());
