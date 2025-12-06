@@ -56,19 +56,6 @@ async function main() {
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
 
-  // Debug Middleware
-  app.use((req, res, next) => {
-    console.log(`[DEBUG] ${req.method} ${req.url} | Origin: ${req.headers.origin}`);
-    console.log(`[DEBUG] Cookies: ${req.headers.cookie ? 'Present' : 'Missing'}`);
-    console.log(`[DEBUG] Session ID: ${req.sessionID}`);
-    if (req.session && req.session.user) {
-      console.log(`[DEBUG] Session User: ${req.session.user.email}`);
-    } else {
-      console.log(`[DEBUG] No active session user.`);
-    }
-    next();
-  });
-
   // Security & Performance middleware
   app.use(helmet());
   app.use(compression());
@@ -84,13 +71,27 @@ async function main() {
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
+    proxy: true, // Required for secure cookies behind Render proxy
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Must be 'none' for cross-site cookie
+      secure: true, // Force Secure for Cross-Site
+      sameSite: 'none', // Force None for Cross-Site
       maxAge: 1000 * 60 * 60 * 24 * 7,
     }
   }));
+
+  // Debug Middleware (Must be AFTER session)
+  app.use((req, res, next) => {
+    console.log(`[DEBUG] ${req.method} ${req.url} | Origin: ${req.headers.origin}`);
+    console.log(`[DEBUG] Cookies: ${req.headers.cookie ? 'Present' : 'Missing'}`);
+    console.log(`[DEBUG] Session ID: ${req.sessionID}`);
+    if (req.session && req.session.userId) { // Check userId as per auth.js
+      console.log(`[DEBUG] Session UserID: ${req.session.userId} | Type: ${req.session.userType}`);
+    } else {
+      console.log(`[DEBUG] No active session user.`);
+    }
+    next();
+  });
 
   // routes
   app.use('/api/auth', require('./routes/auth'));
