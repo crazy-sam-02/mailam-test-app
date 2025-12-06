@@ -17,6 +17,9 @@ connectDB();
 
 async function main() {
 
+  console.log('Starting server...');
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+
   // Move CORS to the top
   // Allow multiple frontend origins (comma-separated)
   const envOrigins = (process.env.FRONTEND_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -49,6 +52,19 @@ async function main() {
 
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
+
+  // Debug Middleware
+  app.use((req, res, next) => {
+    console.log(`[DEBUG] ${req.method} ${req.url} | Origin: ${req.headers.origin}`);
+    console.log(`[DEBUG] Cookies: ${req.headers.cookie ? 'Present' : 'Missing'}`);
+    console.log(`[DEBUG] Session ID: ${req.sessionID}`);
+    if (req.session && req.session.user) {
+      console.log(`[DEBUG] Session User: ${req.session.user.email}`);
+    } else {
+      console.log(`[DEBUG] No active session user.`);
+    }
+    next();
+  });
 
   // Security & Performance middleware
   app.use(helmet());
