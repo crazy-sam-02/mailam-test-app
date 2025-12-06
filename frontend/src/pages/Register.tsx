@@ -118,7 +118,7 @@ const Register = () => {
                   <Label htmlFor="name">Full Name</Label>
                   <Input
                     id="name"
-                    placeholder="John Doe"
+                    placeholder="Leo Das"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="backdrop-blur-sm bg-white/5 border-white/20 focus:border-primary transition-all h-11"
@@ -130,7 +130,7 @@ const Register = () => {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="your.email@example.com"
+                    placeholder="your@mailamengg.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="backdrop-blur-sm bg-white/5 border-white/20 focus:border-primary transition-all h-11"
@@ -229,7 +229,7 @@ const Register = () => {
                     <Label htmlFor="enrollmentNumber">Enrollment Number</Label>
                     <Input
                       id="enrollmentNumber"
-                      placeholder="EN12345678"
+                      placeholder="Enroll number"
                       value={formData.enrollmentNumber}
                       onChange={(e) => setFormData({ ...formData, enrollmentNumber: e.target.value })}
                       className="backdrop-blur-sm bg-white/5 border-white/20 h-11"
@@ -240,7 +240,7 @@ const Register = () => {
                     <Label htmlFor="registerNumber">Register Number</Label>
                     <Input
                       id="registerNumber"
-                      placeholder="REG12345678"
+                      placeholder="4216------"
                       value={formData.registerNumber}
                       onChange={(e) => setFormData({ ...formData, registerNumber: e.target.value })}
                       className="backdrop-blur-sm bg-white/5 border-white/20 h-11"
