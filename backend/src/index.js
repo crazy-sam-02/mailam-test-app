@@ -20,6 +20,9 @@ async function main() {
   console.log('Starting server...');
   console.log('NODE_ENV:', process.env.NODE_ENV);
 
+  app.set('trust proxy', 1); // Crucial for Render/Heroku SSL termination
+
+
   // Move CORS to the top
   // Allow multiple frontend origins (comma-separated)
   const envOrigins = (process.env.FRONTEND_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -73,7 +76,7 @@ async function main() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  app.set('trust proxy', 1);
+  // app.set('trust proxy', 1); // Moved to top
   const sessionSecret = process.env.SESSION_SECRET || 'dev-secret';
   app.use(session({
     name: 'sid',
