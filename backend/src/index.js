@@ -35,13 +35,21 @@ async function main() {
 
   const corsOptions = {
     origin(origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
 
+      // Allow localhost
       if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
         return callback(null, true);
       }
 
+      // Allow explicitly listed origins
       if (ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow dynamic subdomains for deployments (Netlify/Render/Vercel)
+      if (origin.endsWith('.netlify.app') || origin.endsWith('.onrender.com') || origin.endsWith('.vercel.app')) {
         return callback(null, true);
       }
 
