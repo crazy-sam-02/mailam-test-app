@@ -36,7 +36,7 @@ const TestAttendanceView = ({ attempts, tests, students }: TestAttendanceViewPro
                 </CardHeader>
                 <CardContent>
                   <div className="flex justify-between items-center text-sm text-muted-foreground">
-                    <span>{distinctStudents-1} Students Attended</span>
+                    <span>{distinctStudents} Students Attended</span>
                     <Badge variant="secondary">View</Badge>
                   </div>
                 </CardContent>

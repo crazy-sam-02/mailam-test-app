@@ -131,6 +131,14 @@ router.post('/login', async (req, res, next) => {
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
     req.session.userId = account._id;
     req.session.userType = type;
+
+    // Explicitly enforce cookie settings for cross-site usage
+    if (process.env.NODE_ENV === 'production') {
+      req.session.cookie.secure = true;
+      req.session.cookie.sameSite = 'none';
+      req.session.cookie.httpOnly = true;
+      req.session.cookie.maxAge = 24 * 60 * 60 * 1000; // 24 hours
+    }
     const base = { id: account._id, name: account.name, email: account.email, role: type === 'admin' ? 'admin' : (account.role || 'student') };
     if (type === 'admin') {
       return res.json({ user: { ...base, dept: account.dept, semester: account.semester, year: account.year, section: account.section } });
