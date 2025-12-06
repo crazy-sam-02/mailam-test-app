@@ -22,17 +22,46 @@ async function main() {
 
   app.set('trust proxy', true); // Trust all proxies on Render
 
-  // ... (CORS is already here)
+  const corsOptions = {
+    origin: [
+      "https://mailam-enginering-college-test.netlify.app",
+      "http://localhost:5173",
+      "http://localhost:8080"
+    ],
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  };
 
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
-  // Explicit OPTIONS handler for preflight redundancy
   app.options('/*', (req, res) => res.sendStatus(200));
 
   // Security & Performance middleware
-  // ...
+  app.use(helmet());
+  app.use(compression());
 
-  // ... (Session setup remains)
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  const sessionSecret = process.env.SESSION_SECRET || 'dev-secret';
+  const isProd = String(process.env.NODE_ENV).toLowerCase() === 'production';
+
+  // Session setup
+  app.use(session({
+    name: 'sid',
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
+    proxy: true,
+    cookie: {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    }
+  }));
 
   // Debug Middleware (Must be AFTER session)
   app.use((req, res, next) => {
@@ -43,8 +72,6 @@ async function main() {
     console.log(`[DEBUG] Session ID: ${req.sessionID}`);
     if (req.session) {
       console.log(`[DEBUG] Session Data:`, JSON.stringify({ userId: req.session.userId, type: req.session.userType }));
-    } else {
-      console.log(`[DEBUG] Req.session is undefined`);
     }
     next();
   });
