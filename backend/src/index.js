@@ -22,20 +22,37 @@ async function main() {
 
   app.set('trust proxy', true); // Trust all proxies on Render
 
+  // Build dynamic allowed origins list from env and sensible defaults
+  const defaultOrigins = [
+    'https://mailam-enginering-college-test.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:8080'
+  ];
+  const envOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
+
+  const originFn = (origin, callback) => {
+    if (!origin) return callback(null, true); // non-browser or same-origin
+    const isAllowed = allowedOrigins.includes(origin)
+      || /https:\/\/.+\.netlify\.app$/.test(origin)
+      || /https:\/\/.+\.onrender\.com$/.test(origin)
+      || /^http:\/\/localhost:\d{2,5}$/.test(origin);
+    callback(null, isAllowed);
+  };
+
   const corsOptions = {
-    origin: [
-      "https://mailam-enginering-college-test.netlify.app",
-      "http://localhost:5173",
-      "http://localhost:8080"
-    ],
+    origin: originFn,
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+    exposedHeaders: ['Content-Length'],
   };
 
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
-  app.options('/*', (req, res) => res.sendStatus(200));
 
   // Security & Performance middleware
   app.use(helmet({
