@@ -12,7 +12,7 @@ These variables must be set in your backend hosting environment (e.g., Render, R
 - `PORT`: 8000 (or provided by host)
 - `MONGO_URI`: Your MongoDB connection string (e.g., MongoDB Atlas).
 - `SESSION_SECRET`: A long, random string for securing sessions.
-- `FRONTEND_ORIGIN`: Comma-separated list of frontend URLs (e.g., `https://scholarshield.netlify.app,https://your-custom-domain.com`).
+- `FRONTEND_ORIGIN`: Comma-separated list of frontend URLs (e.g., `https://mailam-enginering-college-test.netlify.app,https://your-custom-domain.com`).
 - `NODE_ENV`: Set to `production`.
 
 #### Frontend (`frontend/.env`)

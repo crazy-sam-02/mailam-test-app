@@ -41,7 +41,7 @@ async function main() {
   }));
 
   // Allow multiple frontend origins (comma-separated)
-  const ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173,http://localhost:8080')
+  const ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173,http://localhost:8080,https://mailam-enginering-college-test.netlify.app')
     .split(',')
     .map(s => s.trim());
   const corsOptions = {
