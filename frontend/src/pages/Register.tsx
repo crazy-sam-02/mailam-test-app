@@ -164,7 +164,7 @@ const Register = () => {
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
-                      {['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL'].map(dept => (
+                      {['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS', 'MBA', 'MCA'].map(dept => (
                         <SelectItem key={dept} value={dept}>{dept}</SelectItem>
                       ))}
                     </SelectContent>

@@ -374,7 +374,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                 <div className="space-y-2">
                   <Label>Department</Label>
                   <MultiSelect
-                    options={['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS'].map(d => ({ label: d, value: d }))}
+                    options={['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS', 'MBA', 'MCA'].map(d => ({ label: d, value: d }))}
                     value={testData.department}
                     onChange={(val) => setTestData({ ...testData, department: val })}
                     placeholder="Select Departments"

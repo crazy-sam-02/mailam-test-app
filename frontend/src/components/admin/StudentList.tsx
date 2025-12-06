@@ -26,7 +26,7 @@ const StudentList = ({ students }: StudentListProps) => {
   // Derive unique options for filters, merging with standards
   const departments = useMemo(() => {
     const existing = new Set(students.map(s => s.dept || 'Unknown'));
-    const standard = ['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS'];
+    const standard = ['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS', 'MBA', 'MCA'];
     standard.forEach(d => existing.add(d));
     existing.delete('Unknown'); // Remove 'Unknown' if valid opts exist
     if (existing.size === 0) existing.add('Unknown');
