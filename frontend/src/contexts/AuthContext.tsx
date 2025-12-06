@@ -38,9 +38,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const res = await api.apiLogin(email, password);
-      if (res?.user) {
-        setUser(res.user as User);
+      // Perform login to establish cookie session
+      await api.apiLogin(email, password);
+      // Always hydrate from /auth/me to avoid relying on response body
+      const me = await api.apiMe();
+      if (me?.user) {
+        setUser(me.user as User);
         return true;
       }
       return false;
@@ -63,8 +66,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         res = await api.apiRegisterStudent(payload);
       }
-      if (res?.user) {
-        setUser(res.user as User);
+      // After registration, hydrate via /auth/me if server created a session
+      const me = await api.apiMe();
+      if (me?.user) {
+        setUser(me.user as User);
         return true;
       }
       return false;
@@ -74,8 +79,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    setUser(null);
-    api.apiLogout().catch(() => {});
+    api.apiLogout()
+      .catch(() => {})
+      .finally(() => setUser(null));
   };
 
   return (

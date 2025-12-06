@@ -90,12 +90,15 @@ const StudentDashboard = () => {
         const mappedA: Attempt[] = serverAttempts.map((a: Record<string, any>) => ({
           id: String(a._id || a.attemptId || crypto.randomUUID()),
           testId: String(a.test?._id || a.test || ''),
+          testTitle: a.test?.title || 'Unknown Test',
           studentId: String((a.student && a.student._id) || a.student || (user?.id || '')),
           answers: Array.isArray(a.answers) ? a.answers.map((x: Record<string, any>) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
           score: Number(a.score || 0),
           startedAt: String(a.startedAt || ''),
           finishedAt: String(a.submittedAt || a.finishedAt || ''),
           suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
+          totalQuestions: a.totalQuestions ? Number(a.totalQuestions) : undefined,
+          percentage: a.percentage ? Number(a.percentage) : undefined,
         }));
         setMyAttempts(mappedA);
       } catch (err) {
@@ -126,8 +129,12 @@ const StudentDashboard = () => {
   const avgScore = (() => {
     if (myAttempts.length === 0) return 0;
     const percentages = myAttempts.map((a) => {
+      // Use stored percentage if available
+      if (typeof a.percentage === 'number') return a.percentage;
+
+      // Fallback: calculate from available tests
       const test = availableTests.find((t) => t.id === a.testId);
-      const totalQs = test ? (Array.isArray(test.questions) ? test.questions.length : Number(test.questions || 0)) : 0;
+      const totalQs = a.totalQuestions || (test ? (Array.isArray(test.questions) ? test.questions.length : Number(test.questions || 0)) : 0);
       if (!totalQs) return 0; // avoid division by zero
       return (Number(a.score || 0) / totalQs) * 100;
     });
@@ -304,18 +311,18 @@ const StudentDashboard = () => {
                     >
                       <CardHeader>
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-lg">{test?.title || 'Unknown Test'}</CardTitle>
+                          <CardTitle className="text-lg">{attempt.testTitle || 'Unknown Test'}</CardTitle>
                           {(() => {
                             const test = availableTests.find(t => t.id === attempt.testId);
-                            const totalQs = test ? (Array.isArray(test.questions) ? test.questions.length : Number(test.questions || 0)) : 0;
-                            const percent = totalQs ? Math.round((attempt.score / totalQs) * 100) : null;
+                            const totalQs = attempt.totalQuestions || (test ? (Array.isArray(test.questions) ? test.questions.length : Number(test.questions || 0)) : 0);
+                            const percent = attempt.percentage ?? (totalQs ? Math.round((attempt.score / totalQs) * 100) : null);
                             const passed = percent !== null ? percent >= 70 : attempt.score >= 70;
                             return (
                               <Badge
                                 variant={passed ? 'default' : 'secondary'}
                                 className={passed ? 'bg-gradient-to-r from-emerald-500 to-green-500' : ''}
                               >
-                                {percent !== null ? `Score: ${percent}%` : `Questions Correct: ${attempt.score}`}
+                                {percent !== null ? `Score: ${Math.round(percent)}%` : `Questions Correct: ${attempt.score}`}
                               </Badge>
                             );
                           })()}

@@ -71,4 +71,6 @@ export interface Attempt {
   malpractice?: boolean;
   malpracticeReason?: string;
   autoSubmitted?: boolean;
+  totalQuestions?: number;
+  percentage?: number;
 }

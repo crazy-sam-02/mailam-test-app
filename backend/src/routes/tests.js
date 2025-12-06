@@ -381,6 +381,8 @@ router.post('/:id/submit', requireAuth, async (req, res, next) => {
     attempt.answers = answers;
     attempt.suspiciousEvents = suspiciousEvents || [];
     attempt.score = score;
+    attempt.totalQuestions = attempt.test.questions.length;
+    attempt.percentage = (score / Math.max(1, attempt.test.questions.length)) * 100;
     attempt.submittedAt = new Date();
     attempt.autoSubmitted = autoSubmitted;
 

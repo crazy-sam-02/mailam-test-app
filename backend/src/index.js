@@ -65,17 +65,24 @@ async function main() {
 
   // app.set('trust proxy', 1); // Moved to top
   const sessionSecret = process.env.SESSION_SECRET || 'dev-secret';
+  const isProd = String(process.env.NODE_ENV).toLowerCase() === 'production';
+  // Determine cookie security based on environment and origin scheme
+  // In production (behind HTTPS), use secure + sameSite none for cross-site setups (Netlify/Render)
+  // In local development (http://localhost), use secure=false and sameSite='lax' to allow cookies to be set
+  const cookieSecure = isProd ? true : false;
+  const cookieSameSite = isProd ? 'none' : 'lax';
+
   app.use(session({
     name: 'sid',
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-    proxy: true, // Required for secure cookies behind Render proxy
+    proxy: true, // allow trusting X-Forwarded-* for secure cookies behind proxies
     cookie: {
       httpOnly: true,
-      secure: true, // Force Secure for Cross-Site
-      sameSite: 'none', // Force None for Cross-Site
+      secure: cookieSecure,
+      sameSite: cookieSameSite,
       maxAge: 1000 * 60 * 60 * 24 * 7,
     }
   }));

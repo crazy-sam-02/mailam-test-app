@@ -2,8 +2,7 @@ import type { User, Test, Attempt, Answer } from '@/types';
 
 const HOST = (typeof window !== 'undefined' && (window as any).location?.hostname) ? (window as any).location.hostname : 'localhost';
 // Temporary: Force production URL to override incompatible local .env variables
-let API_BASE = 'https://mailam-test-app.onrender.com/api';
-// let API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || 'https://mailam-test-app.onrender.com/api';
+let API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 // Ensure API_BASE ends with /api if it doesn't already
 if (!API_BASE.endsWith('/api')) {
