@@ -1,7 +1,13 @@
 import type { User, Test, Attempt, Answer } from '@/types';
 
 const HOST = (typeof window !== 'undefined' && (window as any).location?.hostname) ? (window as any).location.hostname : 'localhost';
-const API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || `http://${HOST}:8000/api`;
+let API_BASE = (import.meta as Record<string, any>).env?.VITE_API_BASE_URL || 'https://mailam-test-app.onrender.com/api';
+
+// Ensure API_BASE ends with /api if it doesn't already
+if (!API_BASE.endsWith('/api')) {
+  // Remove trailing slash if present before appending /api
+  API_BASE = API_BASE.replace(/\/$/, '') + '/api';
+}
 
 async function request(path: string, opts: RequestInit = {}) {
   const res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -78,10 +84,10 @@ export async function apiStartAttempt(testId: string) {
   return request(`/tests/${testId}/start`, { method: 'POST' });
 }
 
-export async function apiSubmitAttempt(testId: string, body: { 
-  attemptId: string; 
-  answers: Answer[]; 
-  suspiciousEvents?: Record<string, any>[]; 
+export async function apiSubmitAttempt(testId: string, body: {
+  attemptId: string;
+  answers: Answer[];
+  suspiciousEvents?: Record<string, any>[];
   autoSubmitted?: boolean;
   malpracticeReason?: string;
 }) {
