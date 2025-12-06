@@ -3,9 +3,9 @@ services:
   - type: web
     name: scholar-shield-backend
     env: node
-    rootCommand: cd backend && npm install
-    buildCommand: cd backend && npm install
-    startCommand: cd backend && npm start
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
     plan: free
     branch: main
     envVars:
@@ -25,9 +25,9 @@ services:
   - type: web
     name: scholar-shield-frontend
     env: static
-    rootCommand: cd frontend && npm install
-    buildCommand: cd frontend && npm run build
-    staticPublishPath: ./frontend/dist
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
     plan: free
     branch: main
     routes:
