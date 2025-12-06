@@ -58,6 +58,11 @@ const QuizList = ({ tests, onUpdate }: QuizListProps) => {
               <div>
                 <CardTitle className="text-lg">{test.title}</CardTitle>
                 <CardDescription className="mt-1">{test.description}</CardDescription>
+                {test.createdByName && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Created by: {test.createdByName}
+                  </p>
+                )}
               </div>
               <Badge variant="secondary">{test.questions.length} Q</Badge>
             </div>
@@ -84,7 +89,7 @@ const QuizList = ({ tests, onUpdate }: QuizListProps) => {
                   onClick={() => handleShareTest(test.id)}
                   variant="outline"
                   size="sm"
-                  className="w-full backdrop-blur-sm bg-white/5 border-white/20 hover:bg-white/10"
+                  className="w-full backdrop-blur-sm bg-white/5 border-white/20 hover:bg-gray-500"
                 >
                   <Share2 className="w-4 h-4 mr-2" />
                   Share
@@ -94,7 +99,7 @@ const QuizList = ({ tests, onUpdate }: QuizListProps) => {
                     <Button
                       variant="destructive"
                       size="sm"
-                      className="w-full mt-2 backdrop-blur-sm bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
+                      className="w-full mt-2 backdrop-blur-sm bg-red-500 border-red-500/20 hover:bg-red-800"
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
                       Delete

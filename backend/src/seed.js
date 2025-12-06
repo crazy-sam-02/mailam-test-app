@@ -1,9 +1,10 @@
-require('dotenv').config();
 const { connectDB } = require('./config/db');
 const User = require('./models/User');
+import dotenv from "dotenv";
+dotenv.config()
 
 async function seed() {
-  await connectDB(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/scholar_shield');
+  await connectDB(process.env.MONGO_URI);
   const existing = await User.findOne({ email: 'admin@local' });
   if (existing) {
     console.log('Admin already exists');

@@ -18,6 +18,9 @@ const AttemptSchema = new mongoose.Schema({
   totalPoints: { type: Number },
   percentage: { type: Number },
   suspiciousEvents: { type: Array, default: [] },
+  malpractice: { type: Boolean, default: false },
+  malpracticeReason: { type: String },
+  autoSubmitted: { type: Boolean, default: false },
   startedAt: { type: Date, default: Date.now },
   submittedAt: { type: Date },
 });

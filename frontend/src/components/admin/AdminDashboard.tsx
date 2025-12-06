@@ -44,7 +44,15 @@ const AdminDashboard = () => {
           const description = String(t.description || '');
           const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
           const assigned = t.assignedTo || {};
-          const semester = String(assigned.semester || user?.semester || '');
+
+          let semester: string[] = [];
+          const rawSem = assigned.semester || assigned.sem;
+          if (Array.isArray(rawSem)) {
+            semester = rawSem.map(String);
+          } else if (rawSem) {
+            semester = [String(rawSem)];
+          }
+
           const depts = assigned.departments || assigned.department || assigned.dept;
           const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
           // Defaults for UI compatibility
@@ -71,6 +79,7 @@ const AdminDashboard = () => {
             startAt,
             endAt,
             createdBy,
+            createdByName: t.createdByName,
           } as Test;
         });
 
@@ -96,18 +105,18 @@ const AdminDashboard = () => {
           const arr = Array.isArray(r?.attempts) ? r.attempts : [];
           const title = String(t.title || 'Untitled');
           for (const a of arr) {
-              allAttempts.push({
-                id: String(a._id || a.attemptId || crypto.randomUUID()),
-                testId: id,
-                testTitle: title,
-                studentId: String(a.student?._id || a.student || ''),
-                answers: Array.isArray(a.answers) ? a.answers.map((x: Record<string, any>) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
-                score: Number(a.score || 0),
-                startedAt: String(a.startedAt || ''),
-                finishedAt: String(a.submittedAt || a.finishedAt || ''),
-                suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
-              });
-            }
+            allAttempts.push({
+              id: String(a._id || a.attemptId || crypto.randomUUID()),
+              testId: id,
+              testTitle: title,
+              studentId: String(a.student?._id || a.student || ''),
+              answers: Array.isArray(a.answers) ? a.answers.map((x: Record<string, any>) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
+              score: Number(a.score || 0),
+              startedAt: String(a.startedAt || ''),
+              finishedAt: String(a.submittedAt || a.finishedAt || ''),
+              suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
+            });
+          }
         }
         setAttempts(allAttempts);
       } catch {
@@ -116,15 +125,7 @@ const AdminDashboard = () => {
 
       try {
         const { students: allStudents } = await apiGetStudents({ limit: 1000 });
-        const adminDept = user?.dept;
-        if (adminDept) {
-          const filtered = Array.isArray(allStudents)
-            ? allStudents.filter((s: User) => String(s.dept || (s as Record<string, any>).department || '') === String(adminDept))
-            : [];
-          setStudents(filtered);
-        } else {
-          setStudents(allStudents || []);
-        }
+        setStudents(allStudents || []);
       } catch (error) {
         console.error('Failed to fetch students', error);
       }
@@ -143,7 +144,7 @@ const AdminDashboard = () => {
     <div className="min-h-screen relative overflow-hidden">
       {/* Animated background */}
       <div className="fixed inset-0 bg-gradient-to-br from-primary/10 via-background to-accent/10 animate-gradient-shift bg-[length:200%_200%]" />
-      
+
       {/* Floating particles */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-float" />
@@ -151,7 +152,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* Glassmorphism header */}
-  <header className="relative border-b border-white/10 backdrop-blur-xl bg-white/5">
+      <header className="relative border-b border-white/10 backdrop-blur-xl bg-white/5">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
@@ -167,8 +168,8 @@ const AdminDashboard = () => {
                 {user?.name} • Semester {user?.semester} • {user?.dept}
               </p>
             </div>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={logout}
               className="backdrop-blur-sm bg-white/5 border-white/20 hover:bg-white/10"
             >
@@ -181,14 +182,18 @@ const AdminDashboard = () => {
 
       <main className="relative container mx-auto px-6 py-8">
         {/* Stats cards */}
-        <div className="grid gap-6 md:grid-cols-3 mb-8 animate-fade-in">
-          {[
-            { title: 'Total Tests', value: tests.length, icon: FileText, gradient: 'from-violet-500/10 to-purple-500/10', iconColor: 'text-violet-400' },
-            { title: 'Students', value: students.length, icon: Users, gradient: 'from-blue-500/10 to-cyan-500/10', iconColor: 'text-cyan-400' },
-            { title: 'Total Attempts', value: attempts.length, icon: BarChart, gradient: 'from-emerald-500/10 to-green-500/10', iconColor: 'text-emerald-400' },
-          ].map((stat, index) => (
-            <Card 
-              key={index} 
+        <div className="grid gap-6 md:grid-cols-4 mb-8 animate-fade-in">
+          {(() => {
+            const malpracticeCount = attempts.filter(a => a.malpractice || a.autoSubmitted || (a.suspiciousEvents?.length || 0) > 0).length;
+            return [
+              { title: 'Total Tests', value: tests.length, icon: FileText, gradient: 'from-violet-500/10 to-purple-500/10', iconColor: 'text-violet-400' },
+              { title: 'Students', value: students.length, icon: Users, gradient: 'from-blue-500/10 to-cyan-500/10', iconColor: 'text-cyan-400' },
+              { title: 'Total Attempts', value: attempts.length, icon: BarChart, gradient: 'from-emerald-500/10 to-green-500/10', iconColor: 'text-emerald-400' },
+              { title: 'Malpractice Cases', value: malpracticeCount, icon: Sparkles, gradient: 'from-red-500/10 to-orange-500/10', iconColor: 'text-red-400' },
+            ];
+          })().map((stat, index) => (
+            <Card
+              key={index}
               className="backdrop-blur-xl bg-white/5 border-white/10 hover:bg-white/10 transition-all hover:scale-105 group"
               style={{ animationDelay: `${index * 0.1}s` }}
             >
@@ -212,7 +217,7 @@ const AdminDashboard = () => {
         <Tabs defaultValue="tests" className="space-y-6">
           <TabsList className="backdrop-blur-xl bg-white/5 border border-white/10 p-1">
             <TabsTrigger value="tests" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white">
-              My Tests
+              Tests
             </TabsTrigger>
             <TabsTrigger value="students" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white">
               Students
@@ -230,7 +235,7 @@ const AdminDashboard = () => {
               <h2 className="text-2xl font-semibold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                 Test Management
               </h2>
-              <Button 
+              <Button
                 onClick={() => setShowCreateQuiz(true)}
                 className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 hover:scale-105 transition-all"
               >
@@ -238,7 +243,7 @@ const AdminDashboard = () => {
                 Create New Test
               </Button>
             </div>
-            <QuizList tests={myTests} onUpdate={loadData} />
+            <QuizList tests={tests} onUpdate={loadData} />
           </TabsContent>
 
           <TabsContent value="students">

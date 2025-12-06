@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,19 +15,26 @@ const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  const [searchParams] = useSearchParams();
+  const redirectPath = searchParams.get('redirect');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     const success = await login(email, password);
-    
+
     if (success) {
       toast.success('Login successful');
-      navigate('/dashboard');
+      if (redirectPath && redirectPath.startsWith('/test/')) {
+        navigate(redirectPath);
+      } else {
+        navigate('/dashboard');
+      }
     } else {
       toast.error('Invalid credentials');
     }
-    
+
     setLoading(false);
   };
 
@@ -35,7 +42,7 @@ const Login = () => {
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4">
       {/* Animated background */}
       <div className="fixed inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/20 animate-gradient-shift bg-[length:200%_200%]" />
-      
+
       {/* Floating orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-float" />
@@ -102,9 +109,9 @@ const Login = () => {
                   required
                 />
               </div>
-              <Button 
-                type="submit" 
-                className="w-full h-11 bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-[1.02] transition-all duration-300" 
+              <Button
+                type="submit"
+                className="w-full h-11 bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-[1.02] transition-all duration-300"
                 disabled={loading}
               >
                 {loading ? 'Signing in...' : 'Sign In'}
@@ -113,8 +120,8 @@ const Login = () => {
             <div className="mt-6 text-center">
               <p className="text-sm text-muted-foreground">
                 Don't have an account?{' '}
-                <Link 
-                  to="/register" 
+                <Link
+                  to="/register"
                   className="font-semibold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent hover:opacity-80 transition-opacity"
                 >
                   Create account

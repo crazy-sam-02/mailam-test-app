@@ -16,9 +16,9 @@ const TestSchema = new mongoose.Schema({
   // Restrict visibility/eligibility to a specific group of students
   assignedTo: {
     departments: [{ type: String }],
-    semester: { type: String },
-    section: { type: String },
-    year: { type: String },
+    semester: [{ type: String }],
+    section: [{ type: String }],
+    year: [{ type: String }],
   },
   durationMinutes: { type: Number, default: 30 },
   attemptsAllowed: { type: Number, default: 1 },

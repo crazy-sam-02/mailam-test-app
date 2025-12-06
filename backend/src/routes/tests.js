@@ -88,12 +88,84 @@ router.get('/', requireAuth, async (req, res, next) => {
       ]
     };
     const [tests, total] = await Promise.all([
-      Test.find(query).select('-questions.correctAnswer').skip(skip).limit(limit).lean(),
+      Test.find(query)
+        .select('-questions.correctAnswer')
+        .populate('createdBy', '_id name email')
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       Test.countDocuments(query),
     ]);
+    tests.forEach(normalizeCreatedBy);
     // student shouldn't see correctAnswer, so no populate needed
     return res.json({ tests, total, page, limit });
   } catch (err) { next(err); }
+});
+
+router.post('/upload', requireAuth, requireAdmin, upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const filePath = req.file.path;
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const difficulty = req.body.difficulty || 'Medium';
+    const questionType = req.body.questionType || 'Multiple Choice';
+
+    let text = '';
+    let questions = [];
+
+    // JSON file (Direct parse)
+    if (ext === '.json') {
+      const content = fs.readFileSync(filePath, 'utf8');
+      try {
+        const json = JSON.parse(content);
+        questions = Array.isArray(json) ? json : (json.questions || []);
+        fs.unlinkSync(filePath);
+        return res.json({ questions });
+      } catch (e) {
+        fs.unlinkSync(filePath);
+        return res.status(400).json({ error: 'Invalid JSON file' });
+      }
+    }
+
+    // Extract text from Document
+    try {
+      if (ext === '.pdf') {
+        const buffer = fs.readFileSync(filePath);
+        const data = await pdfParse(buffer);
+        text = data.text;
+      } else if (ext === '.docx' || ext === '.doc') {
+        const result = await mammoth.extractRawText({ path: filePath });
+        text = result.value;
+      } else if (ext === '.txt') {
+        text = fs.readFileSync(filePath, 'utf8');
+      } else {
+        throw new Error('Unsupported file type');
+      }
+    } finally {
+      // cleanup uploaded file
+      try { fs.unlinkSync(filePath); } catch (e) { }
+    }
+
+    if (!text || text.trim().length < 50) {
+      return res.status(400).json({ error: 'Could not extract enough text from file to generate questions.' });
+    }
+
+    // Call AI Service
+    try {
+      questions = await extractQuestionsFromTextGemini(text, difficulty, questionType);
+      res.json({ questions, method: 'gemini-ai' });
+    } catch (aiError) {
+      console.error('[AI Service Error]', aiError);
+      return res.status(502).json({ error: aiError.message || 'AI processing failed. Check server logs/keys.' });
+    }
+
+  } catch (err) {
+    if (req.file && req.file.path) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { }
+    }
+    next(err);
+  }
 });
 
 // create test (admin)
@@ -103,10 +175,14 @@ router.post('/', requireAuth, requireAdmin, async (req, res, next) => {
     const meta = req.body?.meta || {};
     const assignedRaw = req.body?.assignedTo || meta?.assignedTo || {};
     const depts = assignedRaw.departments || assignedRaw.department || assignedRaw.dept;
-    const semester = assignedRaw.semester || assignedRaw.sem;
-    const section = assignedRaw.section;
-    const year = assignedRaw.year;
+    const semesterRaw = assignedRaw.semester || assignedRaw.sem;
+    const sectionRaw = assignedRaw.section;
+    const yearRaw = assignedRaw.year;
+
     const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
+    const semester = Array.isArray(semesterRaw) ? semesterRaw.map(String) : (semesterRaw ? [String(semesterRaw)] : []);
+    const section = Array.isArray(sectionRaw) ? sectionRaw.map(String) : (sectionRaw ? [String(sectionRaw)] : []);
+    const year = Array.isArray(yearRaw) ? yearRaw.map(String) : (yearRaw ? [String(yearRaw)] : []);
 
     if (!title || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: 'Missing title or questions' });
@@ -127,7 +203,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res, next) => {
       title: String(title).trim(),
       description: description ? String(description) : '',
       questions: normQuestions,
-      assignedTo: { departments, semester: semester ? String(semester) : undefined, section, year },
+      assignedTo: { departments, semester, section, year },
       durationMinutes: Number.isFinite(req.body?.durationMinutes) ? req.body.durationMinutes : (Number.isFinite(meta.durationMinutes) ? meta.durationMinutes : 30),
       attemptsAllowed: Number.isFinite(req.body?.attemptsAllowed) ? req.body.attemptsAllowed : (Number.isFinite(meta.attemptsAllowed) ? meta.attemptsAllowed : 1),
       shuffleQuestions: typeof req.body?.shuffleQuestions === 'boolean' ? req.body.shuffleQuestions : !!meta.shuffleQuestions,
@@ -170,64 +246,27 @@ router.delete('/:id', requireAuth, requireAdmin, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// upload (multipart) -> returns { questions }
-router.post('/upload', requireAuth, requireAdmin, upload.single('file'), async (req, res, next) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file provided' });
-    const filePath = path.resolve(req.file.path);
-    const mime = req.file.mimetype || '';
-    let text = '';
-
-    if (mime.includes('application/json')) {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      let data;
-      try { data = JSON.parse(raw); } catch (e) { return res.status(400).json({ error: 'Invalid JSON' }); }
-      let questions = [];
-      if (Array.isArray(data)) questions = data;
-      else if (Array.isArray(data.questions)) questions = data.questions;
-      else return res.status(400).json({ error: 'JSON must be an array or {questions: []}' });
-      const normalized = questions
-        .filter(q => q && q.text)
-        .map(q => {
-          const opts = Array.isArray(q.options) ? q.options.slice(0, 4).map(String) : [];
-          while (opts.length < 4) opts.push('Option');
-          let idx = Number.isInteger(q.correctOptionIndex) ? q.correctOptionIndex : 0;
-          if (idx < 0 || idx > 3) idx = 0;
-          return { text: String(q.text).trim(), options: opts, correctOptionIndex: idx };
-        });
-      return res.json({ questions: normalized });
-    }
-
-    if (mime.includes('msword') || mime.includes('officedocument.wordprocessingml.document') || req.file.originalname.toLowerCase().endsWith('.docx')) {
-      const result = await mammoth.extractRawText({ path: filePath });
-      text = (result && result.value) || '';
-    } else if (mime.includes('pdf') || req.file.originalname.toLowerCase().endsWith('.pdf')) {
-      const data = await pdfParse(fs.readFileSync(filePath));
-      text = data && data.text ? data.text : '';
-    } else if (mime.startsWith('text/') || req.file.originalname.toLowerCase().endsWith('.txt')) {
-      text = fs.readFileSync(filePath, 'utf8');
-    } else {
-      return res.status(400).json({ error: 'Unsupported file type' });
-    }
-
-    if (!text || text.trim().length < 10) return res.status(400).json({ error: 'Could not extract text from document' });
-    try {
-      const questions = await extractQuestionsFromTextGemini(text);
-      return res.json({ questions });
-    } catch (e) {
-      const msg = (e && e.message) ? String(e.message) : 'AI processing failed';
-      // Provide an actionable hint for common model-not-found errors
-      const hint = 'Check GOOGLE_API_KEY and set GEMINI_MODEL to a supported model like "gemini-1.5-flash-latest".';
-      return res.status(502).json({ error: msg, hint });
-    }
-  } catch (err) { next(err); }
-});
-
 // get single test
 router.get('/:id', requireAuth, async (req, res, next) => {
   try {
-    const test = await Test.findById(req.params.id).lean();
+    const test = await Test.findById(req.params.id)
+      .populate('createdBy', '_id name email')
+      .lean();
+
     if (!test) return res.status(404).json({ error: 'Not found' });
+
+    // Helper to normalize populated createdBy
+    if (test.createdBy && typeof test.createdBy === 'object' && test.createdBy._id) {
+      const id = test.createdBy._id.toString();
+      const name = test.createdBy.name || '';
+      const email = test.createdBy.email || '';
+      test.createdBy = id;
+      test.createdByName = name;
+      test.createdByEmail = email;
+    } else if (test.createdBy) {
+      test.createdBy = String(test.createdBy);
+    }
+
     const userDept = req.user.dept || req.user.department;
     if (req.user.role !== 'admin') {
       const hasAccess = (() => {
@@ -295,10 +334,27 @@ router.post('/:id/start', requireAuth, async (req, res, next) => {
 // submit attempt
 router.post('/:id/submit', requireAuth, async (req, res, next) => {
   try {
-    const { attemptId, answers = [], suspiciousEvents = [] } = req.body;
-    const attempt = await Attempt.findOne({ attemptId }).populate('test');
-    if (!attempt) return res.status(404).json({ error: 'Attempt not found' });
+    const { attemptId, answers = [], suspiciousEvents = [], autoSubmitted = false, malpracticeReason = null } = req.body;
+    let attempt = await Attempt.findOne({ attemptId }).populate('test');
+
+    // Handle offline start: Create attempt if not found
+    if (!attempt) {
+      const test = await Test.findById(req.params.id);
+      if (!test) return res.status(404).json({ error: 'Test not found' });
+
+      attempt = new Attempt({
+        test: test._id,
+        student: req.user._id,
+        attemptId: attemptId,
+        answers: [],
+        startedAt: new Date() // Approximate start time
+      });
+      // Manually populate test for scoring logic
+      attempt.test = test;
+    }
+
     if (attempt.student.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
+
     let score = 0;
     if (attempt.test && attempt.test.questions) {
       const qs = attempt.test.questions;
@@ -309,13 +365,48 @@ router.post('/:id/submit', requireAuth, async (req, res, next) => {
         }
       }
     }
+
+    // Check for malpractice based on suspicious events
+    const tabSwitchEvents = suspiciousEvents.filter(event => event.type === 'tab-switch');
+    const multiFaceEvents = suspiciousEvents.filter(event => event.type === 'multiple-faces');
+    const phoneEvents = suspiciousEvents.filter(event => event.type === 'phone-detected');
+
+    // Strict Malpractice Rules:
+    // 1. Auto-submitted explicitly
+    // 2. Tab switches >= 3
+    // 3. Multiple faces >= 1 (Strict) or set a threshold e.g. > 2 seconds
+    // 4. Phone detected >= 1
+    const hasMalpractice = autoSubmitted || tabSwitchEvents.length >= 3 || multiFaceEvents.length > 0 || phoneEvents.length > 0;
+
     attempt.answers = answers;
     attempt.suspiciousEvents = suspiciousEvents || [];
     attempt.score = score;
     attempt.submittedAt = new Date();
+    attempt.autoSubmitted = autoSubmitted;
+
+    if (hasMalpractice) {
+      attempt.malpractice = true;
+      let reasons = [];
+      if (autoSubmitted) reasons.push(malpracticeReason || 'Auto-submitted');
+      if (tabSwitchEvents.length >= 3) reasons.push(`Excessive tab switching (${tabSwitchEvents.length})`);
+      if (multiFaceEvents.length > 0) reasons.push(`Multiple faces detected (${multiFaceEvents.length} times)`);
+      if (phoneEvents.length > 0) reasons.push(`Phone detected (${phoneEvents.length} times)`);
+
+      attempt.malpracticeReason = reasons.join(', ');
+    }
+
     await attempt.save();
-    res.json({ ok: true, score });
-  } catch (err) { next(err); }
+    res.json({ ok: true, score, malpractice: attempt.malpractice });
+  } catch (err) {
+    if (err.name === 'VersionError') {
+      console.log('VersionError caught, assuming already submitted.');
+      // Attempt was already saved, so we can return the score from the document.
+      // Note: this might not be the most up-to-date score if another request just finished,
+      // but it's better than an error.
+      return res.json({ ok: true, score: attempt.score, malpractice: attempt.malpractice, message: 'Already submitted' });
+    }
+    next(err);
+  }
 });
 
 // attempts for a test (admin)

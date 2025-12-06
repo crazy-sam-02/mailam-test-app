@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LogOut, Clock, FileText, CheckCircle, Sparkles, TrendingUp } from 'lucide-react';
+import { LogOut, Clock, FileText, CheckCircle, Sparkles, TrendingUp, User } from 'lucide-react';
 import { Test, Attempt } from '@/types';
 import { formatDurationMs } from '@/lib/utils';
 import { apiGetTests, apiGetMyAttempts } from '@/lib/api';
@@ -11,10 +11,10 @@ import { useNavigate } from 'react-router-dom';
 
 const StudentDashboard = () => {
   const { user, logout } = useAuth();
-    const [availableTests, setAvailableTests] = useState<Test[]>([]);
-    const [myAttempts, setMyAttempts] = useState<Attempt[]>([]);
-    // Map of testId to total possible points
-    const [testPoints, setTestPoints] = useState<Record<string, number>>({});
+  const [availableTests, setAvailableTests] = useState<Test[]>([]);
+  const [myAttempts, setMyAttempts] = useState<Attempt[]>([]);
+  // Map of testId to total possible points
+  const [testPoints, setTestPoints] = useState<Record<string, number>>({});
   const navigate = useNavigate();
 
   const loadTests = useCallback(async () => {
@@ -34,7 +34,16 @@ const StudentDashboard = () => {
         const description = String(t.description || '');
         const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
         const assigned = t.assignedTo || {};
-        const semester = String(assigned.semester || user?.semester || '');
+
+        // Handle semester as array
+        let semester: string[] = [];
+        const rawSem = assigned.semester || assigned.sem;
+        if (Array.isArray(rawSem)) {
+          semester = rawSem.map(String);
+        } else if (rawSem) {
+          semester = [String(rawSem)];
+        }
+
         const depts = assigned.departments || assigned.department || assigned.dept;
         const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
         const durationMinutes = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
@@ -44,6 +53,7 @@ const StudentDashboard = () => {
         const startAt = t.startAt ? String(t.startAt) : new Date().toISOString();
         const endAt = t.endAt ? String(t.endAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
         const createdBy = typeof t.createdBy === 'object' && t.createdBy?._id ? String(t.createdBy._id) : String(t.createdBy || '');
+        const createdByName = t.createdByName || '';
         return {
           id,
           title,
@@ -57,11 +67,18 @@ const StudentDashboard = () => {
           startAt,
           endAt,
           createdBy,
+          createdByName,
         } as Test;
       });
       const filtered = mapped.filter((t) => {
-        const semMatches = String(t.assignedTo?.semester || '') === String(user?.semester || '');
-        const deptMatches = !t.assignedTo.departments || t.assignedTo.departments.length === 0 || t.assignedTo.departments.includes(user?.dept || 'undefined');
+        const userSem = String(user?.semester || '');
+        const semMatches = t.assignedTo.semester.length === 0 || t.assignedTo.semester.includes(userSem);
+
+        const userDept = String(user?.dept || 'undefined');
+        // Check case-insensitive match for departments
+        const deptMatches = t.assignedTo.departments.length === 0 ||
+          t.assignedTo.departments.some(d => d.toLowerCase() === userDept.toLowerCase());
+
         return semMatches && deptMatches;
       });
       setAvailableTests(filtered);
@@ -122,7 +139,7 @@ const StudentDashboard = () => {
     <div className="min-h-screen relative overflow-hidden">
       {/* Animated background */}
       <div className="fixed inset-0 bg-gradient-to-br from-primary/10 via-background to-accent/10 animate-gradient-shift bg-[length:200%_200%]" />
-      
+
       {/* Floating particles */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-float" />
@@ -146,8 +163,8 @@ const StudentDashboard = () => {
                 {user?.name} • Semester {user?.semester} • {user?.enrollmentNumber}
               </p>
             </div>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={logout}
               className="backdrop-blur-sm bg-white/5 border-white/20 hover:bg-white/10"
             >
@@ -166,8 +183,8 @@ const StudentDashboard = () => {
             { title: 'Completed', value: myAttempts.length, icon: CheckCircle, gradient: 'from-emerald-500/10 to-green-500/10', iconColor: 'text-emerald-400' },
             { title: 'Average Score', value: `${avgScore}%`, icon: TrendingUp, gradient: 'from-blue-500/10 to-cyan-500/10', iconColor: 'text-cyan-400' },
           ].map((stat, index) => (
-            <Card 
-              key={index} 
+            <Card
+              key={index}
               className="backdrop-blur-xl bg-white/5 border-white/10 hover:bg-white/10 transition-all hover:scale-105 group"
               style={{ animationDelay: `${index * 0.1}s` }}
             >
@@ -204,10 +221,10 @@ const StudentDashboard = () => {
                 {availableTests.map((test, index) => {
                   const attemptCount = getAttemptCount(test.id);
                   const canTake = canAttempt(test);
-                  
+
                   return (
-                    <Card 
-                      key={test.id} 
+                    <Card
+                      key={test.id}
                       className="backdrop-blur-xl bg-white/5 border-white/10 hover:bg-white/10 hover:shadow-xl hover:shadow-primary/20 transition-all hover:scale-[1.02] group animate-fade-in"
                       style={{ animationDelay: `${index * 0.1}s` }}
                     >
@@ -218,8 +235,14 @@ const StudentDashboard = () => {
                               {test.title}
                             </CardTitle>
                             <CardDescription className="mt-1">{test.description}</CardDescription>
+                            {test.createdByName && (
+                              <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground bg-secondary/10 px-2 py-1 rounded w-fit">
+                                <User className="w-3 h-3" />
+                                <span>By {test.createdByName}</span>
+                              </div>
+                            )}
                           </div>
-                          <Badge 
+                          <Badge
                             variant={canTake ? 'default' : 'secondary'}
                             className={canTake ? 'bg-gradient-to-r from-primary to-accent' : ''}
                           >
@@ -247,6 +270,8 @@ const StudentDashboard = () => {
                           >
                             {canTake ? 'Start Test' : 'Completed'}
                           </Button>
+
+
                         </div>
                       </CardContent>
                     </Card>
@@ -272,8 +297,8 @@ const StudentDashboard = () => {
                 {myAttempts.map((attempt, index) => {
                   const test = availableTests.find(t => t.id === attempt.testId);
                   return (
-                    <Card 
-                      key={attempt.id} 
+                    <Card
+                      key={attempt.id}
                       className="backdrop-blur-xl bg-white/5 border-white/10 hover:bg-white/10 transition-all animate-fade-in"
                       style={{ animationDelay: `${index * 0.1}s` }}
                     >
@@ -286,7 +311,7 @@ const StudentDashboard = () => {
                             const percent = totalQs ? Math.round((attempt.score / totalQs) * 100) : null;
                             const passed = percent !== null ? percent >= 70 : attempt.score >= 70;
                             return (
-                              <Badge 
+                              <Badge
                                 variant={passed ? 'default' : 'secondary'}
                                 className={passed ? 'bg-gradient-to-r from-emerald-500 to-green-500' : ''}
                               >

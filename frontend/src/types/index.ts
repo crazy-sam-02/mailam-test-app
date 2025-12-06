@@ -28,8 +28,10 @@ export interface Test {
   title: string;
   description: string;
   assignedTo: {
-    semester: string;
+    semester: string[];
     departments: string[];
+    section?: string[];
+    year?: string[];
   };
   questions: string[]; // Question IDs
   durationMinutes: number;
@@ -39,6 +41,8 @@ export interface Test {
   startAt: string;
   endAt: string;
   createdBy: string;
+  createdByName?: string;
+  createdByEmail?: string;
   shareLink?: string;
 }
 
@@ -49,7 +53,7 @@ export interface Answer {
 }
 
 export interface SuspiciousEvent {
-  type: 'tab-switch' | 'fullscreen-exit' | 'copy-attempt' | 'paste-attempt' | 'context-menu' | 'inspect-attempt' | 'screenshot-attempt' | 'print-attempt';
+  type: 'tab-switch' | 'fullscreen-exit' | 'copy-attempt' | 'paste-attempt' | 'context-menu' | 'inspect-attempt' | 'screenshot-attempt' | 'print-attempt' | 'ai-flagged' | 'copy-paste-attempt' | 'multiple-faces' | 'phone-detected';
   timestamp: string;
 }
 
@@ -61,6 +65,10 @@ export interface Attempt {
   answers: Answer[];
   score: number;
   startedAt: string;
-  finishedAt: string;
+  finishedAt?: string;
+  submittedAt?: string;
   suspiciousEvents: SuspiciousEvent[];
+  malpractice?: boolean;
+  malpracticeReason?: string;
+  autoSubmitted?: boolean;
 }

@@ -1,14 +1,21 @@
+
 const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+dotenv.config();
 
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/scholar-shield-quiz', {
+    const uri = process.env.MONGO_URI;
+    if (!uri) {
+      throw new Error('MONGO_URI environment variable is not set');
+    }
+    await mongoose.connect(uri, {
       useNewUrlParser: true,
-      useUnifiedTopology: true,
+      useUnifiedTopology: true
     });
-    console.log('MongoDB connected');
+    console.log('MongoDB connected successfully');
   } catch (err) {
-    console.error(err.message);
+    console.error('Mongo connection error:', err && err.message ? err.message : err);
     process.exit(1);
   }
 };

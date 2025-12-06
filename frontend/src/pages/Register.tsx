@@ -48,15 +48,15 @@ const Register = () => {
     // include admin key as `privateKey` so backend can validate the registration key
     if (role === 'admin') payload.privateKey = adminKey;
 
-    const success = await register(payload);
-    
+    const success = await register(payload as any);
+
     if (success) {
       toast.success('Registration successful');
       navigate('/dashboard');
     } else {
       toast.error('Email already exists');
     }
-    
+
     setLoading(false);
   };
 
@@ -64,7 +64,7 @@ const Register = () => {
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4">
       {/* Animated background */}
       <div className="fixed inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/20 animate-gradient-shift bg-[length:200%_200%]" />
-      
+
       {/* Floating orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-float" />
@@ -181,7 +181,7 @@ const Register = () => {
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
-                      {[1,2,3,4,5,6,7,8].map(sem => (
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
                         <SelectItem key={sem} value={String(sem)}>Sem {sem}</SelectItem>
                       ))}
                     </SelectContent>
@@ -198,7 +198,7 @@ const Register = () => {
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
-                      {[1,2,3,4].map(yr => (
+                      {[1, 2, 3, 4].map(yr => (
                         <SelectItem key={yr} value={String(yr)}>{yr}st Year</SelectItem>
                       ))}
                     </SelectContent>
@@ -250,9 +250,9 @@ const Register = () => {
                 </div>
               )}
 
-              <Button 
-                type="submit" 
-                className="w-full h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-[1.02] transition-all duration-300 text-base font-medium" 
+              <Button
+                type="submit"
+                className="w-full h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-[1.02] transition-all duration-300 text-base font-medium"
                 disabled={loading}
               >
                 {loading ? 'Creating account...' : 'Create Account'}
@@ -261,8 +261,8 @@ const Register = () => {
             <div className="mt-6 text-center">
               <p className="text-sm text-muted-foreground">
                 Already have an account?{' '}
-                <Link 
-                  to="/login" 
+                <Link
+                  to="/login"
                   className="font-semibold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent hover:opacity-80 transition-opacity"
                 >
                   Sign in

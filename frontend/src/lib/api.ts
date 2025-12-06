@@ -78,7 +78,13 @@ export async function apiStartAttempt(testId: string) {
   return request(`/tests/${testId}/start`, { method: 'POST' });
 }
 
-export async function apiSubmitAttempt(testId: string, body: { attemptId: string; answers: Answer[]; suspiciousEvents?: Record<string, any>[]; }) {
+export async function apiSubmitAttempt(testId: string, body: { 
+  attemptId: string; 
+  answers: Answer[]; 
+  suspiciousEvents?: Record<string, any>[]; 
+  autoSubmitted?: boolean;
+  malpracticeReason?: string;
+}) {
   return request(`/tests/${testId}/submit`, { method: 'POST', body: JSON.stringify(body) });
 }
 

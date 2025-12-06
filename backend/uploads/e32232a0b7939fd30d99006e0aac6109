@@ -1,0 +1,152 @@
+[
+    {
+        "text": "What is the primary purpose of a firewall in computer security?",
+        "options": [
+            "To prevent unauthorized access to or from a private network",
+            "To speed up internet connection",
+            "To store backup data",
+            "To cool down the server"
+        ],
+        "correctOptionIndex": 0
+    },
+    {
+        "text": "Which protocol is used for secure communication over a computer network?",
+        "options": [
+            "HTTP",
+            "FTP",
+            "HTTPS",
+            "SMTP"
+        ],
+        "correctOptionIndex": 2
+    },
+    {
+        "text": "What does SQL stand for?",
+        "options": [
+            "Structured Question Language",
+            "Structured Query Language",
+            "Simple Query Language",
+            "System Query Language"
+        ],
+        "correctOptionIndex": 1
+    },
+    {
+        "text": "Which data structure uses LIFO (Last In, First Out) principle?",
+        "options": [
+            "Queue",
+            "Linked List",
+            "Stack",
+            "Tree"
+        ],
+        "correctOptionIndex": 2
+    },
+    {
+        "text": "What is the time complexity of binary search on a sorted array?",
+        "options": [
+            "O(n)",
+            "O(n log n)",
+            "O(log n)",
+            "O(1)"
+        ],
+        "correctOptionIndex": 2
+    },
+    {
+        "text": "Which of the following is NOT a valid variable name in Python?",
+        "options": [
+            "my_var",
+            "_var",
+            "2var",
+            "var2"
+        ],
+        "correctOptionIndex": 2
+    },
+    {
+        "text": "What is the main function of an Operating System?",
+        "options": [
+            "To compile code",
+            "To manage hardware and software resources",
+            "To browse the internet",
+            "To design graphics"
+        ],
+        "correctOptionIndex": 1
+    },
+    {
+        "text": "Which layer of the OSI model is responsible for routing?",
+        "options": [
+            "Physical Layer",
+            "Data Link Layer",
+            "Network Layer",
+            "Transport Layer"
+        ],
+        "correctOptionIndex": 2
+    },
+    {
+        "text": "What does HTML stand for?",
+        "options": [
+            "Hyper Text Markup Language",
+            "High Tech Modern Language",
+            "Hyper Transfer Markup Language",
+            "Home Tool Markup Language"
+        ],
+        "correctOptionIndex": 0
+    },
+    {
+        "text": "In Object-Oriented Programming, what is 'Encapsulation'?",
+        "options": [
+            "Hiding the internal state and requiring all interaction to be performed through an object's methods",
+            "Creating new classes from existing classes",
+            "The ability of different classes to be treated as instances of the same general class",
+            "Writing code in C++"
+        ],
+        "correctOptionIndex": 0
+    },
+    {
+        "text": "Which of these is a NoSQL database?",
+        "options": [
+            "MySQL",
+            "PostgreSQL",
+            "MongoDB",
+            "Oracle"
+        ],
+        "correctOptionIndex": 2
+    },
+    {
+        "text": "What is the purpose of DNS?",
+        "options": [
+            "To assign IP addresses",
+            "To translate domain names to IP addresses",
+            "To encrypt data",
+            "To route packets"
+        ],
+        "correctOptionIndex": 1
+    },
+    {
+        "text": "Which sorting algorithm has the best average case time complexity?",
+        "options": [
+            "Bubble Sort",
+            "Insertion Sort",
+            "Merge Sort",
+            "Selection Sort"
+        ],
+        "correctOptionIndex": 2
+    },
+    {
+        "text": "What is a 'deadlock' in operating systems?",
+        "options": [
+            "When a process terminates unexpectedly",
+            "When two or more processes are unable to proceed because each is waiting for the other to release a resource",
+            "When the system runs out of memory",
+            "When the CPU overheats"
+        ],
+        "correctOptionIndex": 1
+    },
+    {
+        "text": "Which of the following is a client-side scripting language?",
+        "options": [
+            "Python",
+            "PHP",
+            "JavaScript",
+            "Java"
+        ],
+        "correctOptionIndex": 2
+    }
+]

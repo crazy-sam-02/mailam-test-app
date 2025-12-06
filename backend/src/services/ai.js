@@ -1,102 +1,203 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+// Optional import for OpenAI to avoid hard crash if not installed yet
+let OpenAI;
+try { OpenAI = require('openai'); } catch (e) { }
 
-function buildPrompt(text) {
-  return `You are an expert exam setter. Extract multiple-choice questions from the provided content.
-Return ONLY valid JSON with this exact shape:
-{
-  "questions": [
-    { "text": string, "options": string[4], "correctOptionIndex": number (0..3) }
-  ]
-}
-Rules:
-- If fewer than 4 options, pad remaining options with plausible distractors.
-- Ensure correctOptionIndex matches one of the options (0..3).
-- Remove any labels like A), B), 1. from option text.
-- Do not include explanations.
-- Keep JSON under 200KB.
+// --- generic prompt builder ---
+function buildPrompt(text, difficulty = 'Medium', questionType = 'Multiple Choice') {
+  return `You are an intelligent quiz parser and generator.
 
-CONTENT START\n${text}\nCONTENT END`;
-}
+  INPUT CONTEXT:
+  The user has provided text that needs to be converted into a structured JSON quiz.
+  
+  INSTRUCTIONS:
+  1. ANALYZE the content:
+     - CASE A: Does it contain a list of questions (e.g., "1. What is...?", "Q1...", etc.)?
+       -> ACTION: Extract these questions verbatim. Preserve the options/choices if available. Identify the correct answer if marked (e.g. bolded, *, "Ans:", or at the end). If no answer is marked, logically infer the correct answer.
+     - CASE B: Is it informational text (articles, notes, chapters)?
+       -> ACTION: Generate new ${difficulty} level questions of type "${questionType}" based on this text.
 
-async function extractQuestionsFromTextGemini(text) {
-  const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Missing GOOGLE_API_KEY');
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-
-  // Prefer a known-good default; allow override via env
-  const preferred = (process.env.GEMINI_MODEL || '').trim() || 'gemini-1.5-flash-latest';
-  const fallbacks = [
-    // Try a couple of widely available models in descending preference
-    'gemini-1.5-pro-latest',
-    'gemini-1.5-flash-8b-latest',
-    'gemini-1.5-pro',
-    'gemini-1.5-flash',
-  ].filter(m => m !== preferred);
-
-  const prompt = buildPrompt(text);
-
-  async function tryModel(modelId) {
-    const model = genAI.getGenerativeModel({ model: modelId });
-    const res = await model.generateContent(prompt);
-    const out = await res.response.text();
-    return out;
+  2. STRICT JSON OUTPUT FORMAT:
+  {
+    "questions": [
+      {
+        "text": "Question text here?",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "correctOptionIndex": 0, 
+        "answer": "Answer text or keyword", 
+        "explanation": "Brief reasoning",
+        "type": "multiple-choice" 
+      }
+    ]
   }
 
-  let rawOut;
-  let lastErr;
-  const candidates = [preferred, ...fallbacks];
-  for (const m of candidates) {
+  CONSTRAINT RULES:
+  - "correctOptionIndex" must be 0, 1, 2, or 3 for Multiple Choice.
+  - For True/False, use options ["True", "False"] and index 0 or 1.
+  - For Short Answer, use options [] and correctOptionIndex -1.
+  - Remove numbering (1., A)) from the start of question text or options.
+  - Ensure the JSON is valid and parsable. Do not include markdown keys (like \`\`\`json).
+
+  CONTENT TO PROCESS:
+  ${text.substring(0, 30000)} 
+  (Content truncated if too long)
+  `;
+}
+
+// --- Providers ---
+
+class MockProvider {
+  async generate(text, difficulty, type) {
+    console.log('[AI] Using MOCK configuration');
+    return [
+      {
+        text: "Sample collected question (Mock Mode)",
+        options: ["True", "False"],
+        correctOptionIndex: 0,
+        type: "true-false",
+        explanation: "Mock mode is active. Check AI_PROVIDER in .env."
+      }
+    ];
+  }
+}
+
+class GeminiProvider {
+  constructor() {
+    if (!process.env.GOOGLE_API_KEY) throw new Error('Missing GOOGLE_API_KEY for Gemini Provider');
+    this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+    // Prioritize free-tier friendly models
+    this.preferred = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+    this.fallbacks = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-001'];
+  }
+
+  async generate(text, difficulty, type) {
+    const candidates = [this.preferred, ...this.fallbacks];
+    const unique = [...new Set(candidates)];
+    const prompt = buildPrompt(text, difficulty, type);
+
+    for (const m of unique) {
+      if (!m) continue;
+      try {
+        const model = this.genAI.getGenerativeModel({ model: m });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const txt = await response.text();
+        if (txt) return this.parse(txt);
+      } catch (e) {
+        console.warn(`[Gemini] Model ${m} failed:`, e.message);
+        if (e.message && (e.message.includes('404') || e.message.includes('not found') || e.message.includes('429'))) continue;
+        throw e; // Rethrow other errors
+      }
+    }
+    throw new Error('All Gemini models failed. Check Usage/Quota.');
+  }
+
+  parse(raw) {
+    const cleaned = raw.replace(/```json\s*/i, '').replace(/```\s*/i, '').replace(/\s*```$/i, '').trim();
     try {
-      rawOut = await tryModel(m);
-      // If we had to switch models, remember for logs
-      if (m !== preferred) {
-        // eslint-disable-next-line no-console
-        console.warn(`[AI] Fallback model used: ${m}`);
-      }
-      break;
+      const json = JSON.parse(cleaned);
+      return json.questions || (Array.isArray(json) ? json : []);
     } catch (e) {
-      lastErr = e;
-      // If it looks like a 404 Not Found for model id or unsupported method, keep trying
-      const msg = (e && e.message) ? String(e.message) : '';
-      if (e && (e.status === 404 || /not\s*found|unsupported/i.test(msg))) {
-        continue; // try next candidate
-      }
-      // Other errors (auth/quota/network) – stop early
-      break;
+      // fallback array regex
+      const match = cleaned.match(/\[.*\]/s);
+      if (match) return JSON.parse(match[0]);
+      throw new Error('Invalid JSON from AI');
+    }
+  }
+}
+
+class OpenAIProvider {
+  constructor(providerName = 'openai') {
+    this.providerName = providerName; // 'openai' or 'groq'
+    this.apiKey = providerName === 'groq' ? process.env.GROQ_API_KEY : process.env.OPENAI_API_KEY;
+    this.baseURL = providerName === 'groq' ? 'https://api.groq.com/openai/v1' : undefined;
+
+    if (!this.apiKey) throw new Error(`Missing API Key for ${providerName.toUpperCase()}`);
+    if (!OpenAI) throw new Error('openai package not installed. Run npm install openai');
+
+    this.client = new OpenAI({ apiKey: this.apiKey, baseURL: this.baseURL });
+
+    // Defaults
+    if (providerName === 'groq') {
+      this.model = process.env.GROQ_MODEL || 'llama3-70b-8192';
+    } else {
+      this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     }
   }
 
-  if (!rawOut) {
-    const detail = lastErr && (lastErr.status || lastErr.statusText || lastErr.message) ? `: ${lastErr.status || ''} ${lastErr.statusText || lastErr.message}` : '';
-    throw new Error(`Gemini generateContent failed${detail}`.trim());
+  async generate(text, difficulty, type) {
+    const systemPrompt = "You are a helpful JSON API converting text to quiz questions.";
+    const userPrompt = buildPrompt(text, difficulty, type);
+
+    try {
+      const completion = await this.client.chat.completions.create({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        model: this.model,
+        response_format: { type: "json_object" }, // helpful for OpenAI
+        temperature: 0.3,
+      });
+
+      const content = completion.choices[0].message.content;
+      if (!content) throw new Error('No content returned');
+
+      const json = JSON.parse(content);
+      return json.questions || (Array.isArray(json) ? json : []);
+    } catch (e) {
+      console.error(`[${this.providerName}] Error:`, e.message);
+      throw e;
+    }
   }
+}
 
-  // Strip fences like ```json ... ``` or ``` ... ```
-  const cleaned = String(rawOut)
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim();
+// --- Factory ---
 
-  let json = null;
-  try {
-    json = JSON.parse(cleaned);
-  } catch (e) {
-    throw new Error('AI returned non-JSON output');
-  }
-  if (!json || !Array.isArray(json.questions)) throw new Error('AI output missing questions');
+async function getProvider() {
+  const provider = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
 
-  // Normalize
-  const normalized = json.questions
-    .filter(q => q && q.text && Array.isArray(q.options) && q.options.length > 0)
-    .map(q => {
-      const opts = q.options.slice(0, 4).map(o => String(o).trim()).filter(Boolean);
-      while (opts.length < 4) opts.push('Option');
-      let idx = Number.isInteger(q.correctOptionIndex) ? q.correctOptionIndex : 0;
-      if (idx < 0 || idx > 3) idx = 0;
-      return { text: String(q.text).trim(), options: opts, correctOptionIndex: idx };
-    });
-  return normalized;
+  if (provider === 'mock' || process.env.MOCK_AI === 'true') return new MockProvider();
+  if (provider === 'openai') return new OpenAIProvider('openai');
+  if (provider === 'groq') return new OpenAIProvider('groq');
+
+  // Default to Gemini
+  return new GeminiProvider();
+}
+
+async function extractQuestionsFromTextGemini(text, difficulty, questionType) {
+  const provider = await getProvider();
+  const rawQuestions = await provider.generate(text, difficulty, questionType);
+  if (!rawQuestions || rawQuestions.length === 0) throw new Error('No questions generated');
+
+  // Normalization
+  return rawQuestions.map(q => {
+    let opts = Array.isArray(q.options) ? q.options.map(String) : [];
+    let type = q.type || 'multiple-choice';
+    // inference check
+    if (opts.length === 2 && opts.some(o => o.toLowerCase() === 'true')) type = 'true-false';
+
+    if (type === 'multiple-choice') {
+      while (opts.length < 4) opts.push('Option ' + (opts.length + 1));
+      opts = opts.slice(0, 4);
+    } else if (type === 'true-false') {
+      opts = ['True', 'False'];
+    }
+
+    let cIdx = Number(q.correctOptionIndex);
+    if (isNaN(cIdx)) cIdx = 0;
+    if (cIdx < 0) cIdx = 0;
+    if (cIdx >= opts.length) cIdx = 0;
+
+    return {
+      text: q.text || 'Untitled Question',
+      options: opts,
+      correctOptionIndex: cIdx,
+      answer: q.answer || (opts[cIdx] || ''),
+      explanation: q.explanation || '',
+      type
+    };
+  });
 }
 
 module.exports = { extractQuestionsFromTextGemini };

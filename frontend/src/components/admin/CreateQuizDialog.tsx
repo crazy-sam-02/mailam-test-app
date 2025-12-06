@@ -8,9 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Question, Test } from '@/types';
 import { toast } from 'sonner';
-import { Plus, Trash2, Upload, FileJson, FileText, Pencil } from 'lucide-react';
+import { Plus, Trash2, Upload, FileJson, FileText, Pencil, Check } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { MultiSelect } from "@/components/ui/multi-select";
 
 interface CreateQuizDialogProps {
   open: boolean;
@@ -27,14 +28,17 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
     description: '',
     durationMinutes: 30,
     attemptsAllowed: 1,
-    semester: user?.semester || '',
-    department: user?.dept || '',
+    semester: [user?.semester || '1'],
+    department: [user?.dept || 'CSE'],
+    section: ['A'], // Default section
   });
   const [questions, setQuestions] = useState<Omit<Question, 'id' | 'createdBy' | 'createdAt'>[]>([
     { text: '', options: ['', '', '', ''], correctOptionIndex: 0 },
   ]);
   const [jsonInput, setJsonInput] = useState('');
   const [questionIds, setQuestionIds] = useState<string[]>([]);
+  const [difficulty, setDifficulty] = useState('Medium');
+  const [questionType, setQuestionType] = useState('Multiple Choice');
 
   // Normalize various incoming JSON shapes to our internal shape
   const normalizeQuestionsInput = (raw: Record<string, any>): Omit<Question, 'id' | 'createdBy' | 'createdAt'>[] => {
@@ -184,9 +188,12 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
 
   // Unified file upload handler (JSON / DOC / DOCX / PDF) using backend /tests/upload
   const handleFileUpload = async (file: File) => {
+    if (!file) return;
     const { apiUploadQuestions } = await import('@/lib/api');
     const form = new FormData();
     form.append('file', file);
+    form.append('difficulty', difficulty);
+    form.append('questionType', questionType);
     const loading = toast.loading(
       file.type === 'application/json' ? 'Processing JSON file...' : 'Extracting questions using AI...'
     );
@@ -197,7 +204,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
       if (Array.isArray(data.questions) && data.questions.length) {
         const added = data.questions.map((q: Record<string, any>) => ({
           text: String(q.text || '').trim(),
-          options: Array.isArray(q.options) ? q.options.slice(0, 4).map((o: any) => String(o)) : ['Option','Option','Option','Option'],
+          options: Array.isArray(q.options) ? q.options.slice(0, 4).map((o: any) => String(o)) : ['Option', 'Option', 'Option', 'Option'],
           correctOptionIndex: typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex : 0,
         }));
         setQuestions(prev => [...prev.filter(q => q.text), ...added]);
@@ -231,13 +238,28 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent, qIndex: number, field: string, oIndex?: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (field === 'text') {
+        const nextInput = document.getElementById(`q-${qIndex}-opt-0`);
+        nextInput?.focus();
+      } else if (field === 'option' && typeof oIndex === 'number') {
+        if (oIndex < 3) {
+          const nextInput = document.getElementById(`q-${qIndex}-opt-${oIndex + 1}`);
+          nextInput?.focus();
+        }
+      }
+    }
+  };
+
   const handleSubmit = () => {
     if (!testData.title) {
       toast.error('Please enter the test title');
       return;
     }
-    if (!testData.semester || !testData.department) {
-      toast.error('Please select semester and department');
+    if (testData.semester.length === 0 || testData.department.length === 0 || testData.section.length === 0) {
+      toast.error('Please select at least one semester, department, and section');
       return;
     }
     if (questions.length === 0) {
@@ -268,7 +290,11 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
           meta: {
             durationMinutes: testData.durationMinutes,
             attemptsAllowed: testData.attemptsAllowed,
-            assignedTo: { semester: testData.semester, department: testData.department },
+            assignedTo: {
+              semester: testData.semester,
+              department: testData.department,
+              section: testData.section
+            },
           }
         } as Record<string, any>;
         const { apiCreateTest } = await import('@/lib/api');
@@ -292,8 +318,9 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
       description: '',
       durationMinutes: 30,
       attemptsAllowed: 1,
-      semester: user?.semester || '',
-      department: user?.dept || '',
+      semester: [user?.semester || '1'],
+      department: [user?.dept || 'CSE'],
+      section: ['A'], // Default
     });
     setQuestions([{ text: '', options: ['', '', '', ''], correctOptionIndex: 0 }]);
     setJsonInput('');
@@ -334,38 +361,33 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                   className="backdrop-blur-sm bg-white/5 border-white/20"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="semester">Semester</Label>
-                  <Select
+                  <Label>Semester</Label>
+                  <MultiSelect
+                    options={[1, 2, 3, 4, 5, 6, 7, 8].map(s => ({ label: `Semester ${s}`, value: String(s) }))}
                     value={testData.semester}
-                    onValueChange={(value) => setTestData({ ...testData, semester: value })}
-                  >
-                    <SelectTrigger className="backdrop-blur-sm bg-white/5 border-white/20">
-                      <SelectValue placeholder="Select semester" />
-                    </SelectTrigger>
-                    <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
-                      {[1,2,3,4,5,6,7,8].map(sem => (
-                        <SelectItem key={sem} value={String(sem)}>Semester {sem}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(val) => setTestData({ ...testData, semester: val })}
+                    placeholder="Select Semesters"
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="department">Department</Label>
-                  <Select
+                  <Label>Department</Label>
+                  <MultiSelect
+                    options={['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS'].map(d => ({ label: d, value: d }))}
                     value={testData.department}
-                    onValueChange={(value) => setTestData({ ...testData, department: value })}
-                  >
-                    <SelectTrigger className="backdrop-blur-sm bg-white/5 border-white/20">
-                      <SelectValue placeholder="Select department" />
-                    </SelectTrigger>
-                    <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
-                      {['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL'].map(dept => (
-                        <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(val) => setTestData({ ...testData, department: val })}
+                    placeholder="Select Departments"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Section</Label>
+                  <MultiSelect
+                    options={['A', 'B', 'C', 'D'].map(s => ({ label: `Section ${s}`, value: s }))}
+                    value={testData.section}
+                    onChange={(val) => setTestData({ ...testData, section: val })}
+                    placeholder="Select Sections"
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -395,7 +417,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
             <div className="space-y-3">
               <Label>Question Creation Mode</Label>
               <Tabs value={creationMode} onValueChange={(v) => setCreationMode(v as any)}>
-                 <TabsList className="grid w-full grid-cols-3 backdrop-blur-sm bg-white/5">
+                <TabsList className="grid w-full grid-cols-3 backdrop-blur-sm bg-white/5">
                   <TabsTrigger value="manual" className="flex items-center gap-2">
                     <Pencil className="w-4 h-4" />
                     Manual
@@ -465,7 +487,10 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                         <Input
                           type="file"
                           accept=".json"
-                          onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleFileUpload(file);
+                          }}
                           className="backdrop-blur-sm bg-white/5 border-white/20"
                         />
                       </div>
@@ -474,9 +499,41 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                         <Input
                           type="file"
                           accept=".pdf,.doc,.docx"
-                          onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleFileUpload(file);
+                          }}
                           className="backdrop-blur-sm bg-white/5 border-white/20"
                         />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Difficulty</Label>
+                          <Select value={difficulty} onValueChange={setDifficulty}>
+                            <SelectTrigger className="backdrop-blur-sm bg-white/5 border-white/20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
+                              <SelectItem value="Easy">Easy</SelectItem>
+                              <SelectItem value="Medium">Medium</SelectItem>
+                              <SelectItem value="Hard">Hard</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Question Type</Label>
+                          <Select value={questionType} onValueChange={setQuestionType}>
+                            <SelectTrigger className="backdrop-blur-sm bg-white/5 border-white/20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
+                              <SelectItem value="Multiple Choice">Multiple Choice</SelectItem>
+                              <SelectItem value="True/False">True/False</SelectItem>
+                              <SelectItem value="Short Answer">Short Answer</SelectItem>
+                              <SelectItem value="Mixed">Mixed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -503,27 +560,36 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                     )}
                   </div>
                   <Textarea
+                    id={`q-${qIndex}-text`}
                     value={q.text}
                     onChange={(e) => updateQuestion(qIndex, 'text', e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, qIndex, 'text')}
                     placeholder="Enter question text"
                     className="backdrop-blur-sm bg-white/5 border-white/20"
                   />
                   <div className="space-y-2">
                     {q.options.map((opt, oIndex) => (
-                      <div key={oIndex} className="flex gap-2 items-center">
-                        <Input
-                          value={opt}
-                          onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
-                          placeholder={`Option ${oIndex + 1}`}
-                          className="backdrop-blur-sm bg-white/5 border-white/20"
-                        />
-                        <input
-                          type="radio"
-                          name={`correct-${qIndex}`}
-                          checked={q.correctOptionIndex === oIndex}
-                          onChange={() => updateQuestion(qIndex, 'correctOptionIndex', oIndex)}
-                          className="w-5 h-5 accent-primary cursor-pointer"
-                        />
+                      <div key={oIndex} className={`flex gap-2 items-center p-2 rounded-md transition-colors ${q.correctOptionIndex === oIndex ? 'bg-green-500/10 border border-green-500/20' : ''}`}>
+                        <div className="flex-1">
+                          <Input
+                            id={`q-${qIndex}-opt-${oIndex}`}
+                            value={opt}
+                            onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, qIndex, 'option', oIndex)}
+                            placeholder={`Option ${oIndex + 1}`}
+                            className={`backdrop-blur-sm bg-white/5 border-white/20 ${q.correctOptionIndex === oIndex ? 'border-green-500/50' : ''}`}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant={q.correctOptionIndex === oIndex ? "default" : "ghost"}
+                          size="icon"
+                          onClick={() => updateQuestion(qIndex, 'correctOptionIndex', oIndex)}
+                          className={q.correctOptionIndex === oIndex ? "bg-green-500 hover:bg-green-600" : "hover:bg-green-500/20"}
+                          title="Mark as correct answer"
+                        >
+                          <Check className="w-4 h-4" />
+                        </Button>
                       </div>
                     ))}
                   </div>

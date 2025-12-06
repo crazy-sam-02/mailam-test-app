@@ -6,8 +6,8 @@ const Admin = require('../models/Admin');
 // Register student
 router.post('/register/student', async (req, res, next) => {
   try {
-  let { name, email, password, dept, semester, year, section, enrollmentNumber, registerNumber } = req.body;
-  email = (email || '').trim().toLowerCase();
+    let { name, email, password, dept, semester, year, section, enrollmentNumber, registerNumber } = req.body;
+    email = (email || '').trim().toLowerCase();
     // ensure email not used by admin either
     const existing = await User.findOne({ email }) || await Admin.findOne({ email });
     if (existing) return res.status(400).json({ error: 'Email already registered' });
@@ -28,8 +28,13 @@ router.post('/register/student', async (req, res, next) => {
 // Register admin
 router.post('/register/admin', async (req, res, next) => {
   try {
-  let { name, email, password, privateKey, dept, semester, year, section } = req.body;
-  email = (email || '').trim().toLowerCase();
+    let { name, email, password, privateKey, dept, semester, year, section } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    email = (email || '').trim().toLowerCase();
     const expected = process.env.REGISTRATION_KEY;
     if (!expected || !privateKey || privateKey !== expected) {
       return res.status(403).json({ error: 'Invalid registration key' });
@@ -48,7 +53,7 @@ router.post('/register/admin', async (req, res, next) => {
     res.json({ user: { id: admin._id, name: admin.name, email: admin.email, role: admin.role, dept: admin.dept, semester: admin.semester, year: admin.year, section: admin.section } });
   } catch (err) {
     if (err && err.code === 11000) {
-      return res.status(400).json({ error: 'there is a error' });
+      return res.status(400).json({ error: 'Email already in use' });
     }
     next(err);
   }

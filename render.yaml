@@ -1,0 +1,43 @@
+services:
+  # Backend Service
+  - type: web
+    name: scholar-shield-backend
+    env: node
+    rootCommand: cd backend && npm install
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
+    plan: free
+    branch: main
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: FRONTEND_ORIGIN
+        sync: false
+    autoDeploy: true
+
+  # Frontend Service (Static Site)
+  - type: web
+    name: scholar-shield-frontend
+    env: static
+    rootCommand: cd frontend && npm install
+    buildCommand: cd frontend && npm run build
+    staticPublishPath: ./frontend/dist
+    plan: free
+    branch: main
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: scholar-shield-backend
+          property: url
+          envVarKey: VITE_API_BASE_URL

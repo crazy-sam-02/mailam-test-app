@@ -1,16 +1,25 @@
-require('dotenv').config();
+// Server entry point - restart trigger
 const express = require('express');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const compression = require('compression');
 const connectDB = require('./config/db');
+const dotenv = require('dotenv');
 
+
+dotenv.config();
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 8000;
+connectDB();
 
 async function main() {
-  await connectDB();
+
+  // Security & Performance middleware
+  app.use(helmet());
+  app.use(compression());
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -22,11 +31,11 @@ async function main() {
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI || 'mongodb://localhost:27017/scholar-shield-quiz' }),
+    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
     cookie: {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production', // true in production
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' needed for cross-site if separated
       maxAge: 1000 * 60 * 60 * 24 * 7,
     }
   }));
@@ -38,9 +47,17 @@ async function main() {
   const corsOptions = {
     origin(origin, callback) {
       // allow same-origin or non-browser requests with no origin
-      if (!origin || ORIGINS.includes(origin)) {
+      if (!origin) return callback(null, true);
+
+      // Allow all localhost/127.0.0.1 origins for development
+      if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
         return callback(null, true);
       }
+
+      if (ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      console.log('Blocked CORS origin:', origin);
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
