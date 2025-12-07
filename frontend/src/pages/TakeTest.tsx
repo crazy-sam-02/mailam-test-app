@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { AlertTriangle, Clock, Maximize2, Minimize2, Webcam, Wifi, WifiOff, Menu } from 'lucide-react';
+import { AlertTriangle, Clock, Maximize2, Minimize2, Webcam, Wifi, WifiOff, Menu, Move, EyeOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
@@ -55,6 +55,38 @@ const TakeTest = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timerRef = useRef<NodeJS.Timeout>();
   const autoSubmitRef = useRef(false);
+
+  // Mobile Webcam Controls
+  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isMinimized, setIsMinimized] = useState(false);
+
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    // Only allow drag on mobile (or when fixed position matches mobile styles)
+    if (window.innerWidth >= 768) return;
+
+    setIsDragging(true);
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    setDragStart({ x: clientX - dragPosition.x, y: clientY - dragPosition.y });
+  };
+
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDragging) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+    // Optional: Add boundary checks here if needed
+    setDragPosition({
+      x: clientX - dragStart.x,
+      y: clientY - dragStart.y
+    });
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
 
   // Load Test & Restore State
   useEffect(() => {
@@ -634,7 +666,29 @@ const TakeTest = () => {
 
           {/* Webcam Preview - Responsive Position */}
           {/* Mobile: Fixed bottom-right. Desktop: Static in sidebar. */}
-          <Card className="pointer-events-auto overflow-hidden fixed bottom-4 right-4 w-32 h-24 md:static md:w-full md:h-auto z-50 border-2 md:border shadow-lg md:shadow-none">
+          {/* Webcam Preview - Responsive Position */}
+          {/* Mobile: Draggable & Minimizable. Desktop: Static in sidebar. */}
+          <Card
+            className={`
+              pointer-events-auto overflow-hidden fixed z-50 
+              md:static md:w-full md:h-auto md:translate-x-0 md:translate-y-0 md:!transform-none
+              border-2 md:border shadow-lg md:shadow-none
+              transition-all duration-200
+              ${isMinimized ? 'w-12 h-12 rounded-full bottom-20 right-4 border-primary' : 'w-32 h-24 bottom-4 right-4'}
+            `}
+            style={{
+              transform: `translate(${dragPosition.x}px, ${dragPosition.y}px)`,
+              touchAction: 'none' // Prevent scrolling while dragging
+            }}
+            onTouchStart={handleDragStart}
+            onMouseDown={handleDragStart}
+            onTouchMove={handleDragMove}
+            onMouseMove={handleDragMove}
+            onMouseUp={handleDragEnd}
+            onTouchEnd={handleDragEnd}
+            onMouseLeave={handleDragEnd}
+          >
+            {/* Desktop Header */}
             <CardHeader className="pb-3 bg-muted/50 hidden md:flex">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -643,7 +697,34 @@ const TakeTest = () => {
                 <div className={`w-2 h-2 rounded-full ${webcamActive && modelsLoaded ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
               </div>
             </CardHeader>
-            <div className="aspect-video bg-black relative">
+
+            {/* Mobile Controls Overlay */}
+            <div className="md:hidden absolute inset-0 z-20 flex flex-col items-center justify-center">
+              {isMinimized ? (
+                // Minimized State Icon
+                <div className="relative w-full h-full flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setIsMinimized(false); }}>
+                  <Webcam className="w-6 h-6 text-primary" />
+                  <div className={`absolute top-1 right-2 w-2.5 h-2.5 rounded-full border border-background ${webcamActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                  <Move className="absolute bottom-1 w-3 h-3 text-muted-foreground opacity-50" />
+                </div>
+              ) : (
+                // Expanded State Controls - Minimize Button
+                <div className="absolute top-0 right-0 p-1">
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-5 w-5 rounded-full opacity-70 hover:opacity-100 shadow-sm"
+                    onClick={(e) => { e.stopPropagation(); setIsMinimized(true); }}
+                  >
+                    <EyeOff className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Video Content */}
+            {/* We keep video mounted even when minimized to ensure stream/AI continues */}
+            <div className={`aspect-video bg-black relative ${isMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-opacity duration-200`}>
               <video
                 ref={videoRef}
                 autoPlay
@@ -652,8 +733,16 @@ const TakeTest = () => {
                 className="w-full h-full object-cover"
               />
               <canvas ref={canvasRef} className="hidden" />
-              {/* Mobile Status Indicator Overlay */}
-              <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${webcamActive ? 'bg-green-500' : 'bg-red-500'} md:hidden animate-pulse`} />
+
+              {/* Drag Handle Indicator (Expanded Mobile) */}
+              {!isMinimized && (
+                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 md:hidden opacity-50 bg-black/50 rounded-full p-0.5 pointer-events-none">
+                  <Move className="w-3 h-3 text-white" />
+                </div>
+              )}
+
+              {/* Mobile Status Indicator Overlay (Expanded only) */}
+              <div className={`absolute top-1 left-1 w-2 h-2 rounded-full ${webcamActive ? 'bg-green-500' : 'bg-red-500'} md:hidden animate-pulse`} />
             </div>
           </Card>
 
