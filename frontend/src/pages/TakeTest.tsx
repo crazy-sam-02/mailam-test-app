@@ -49,6 +49,7 @@ const TakeTest = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [objectDetector, setObjectDetector] = useState<cocoSsd.ObjectDetection | null>(null);
+  const [modelLoadError, setModelLoadError] = useState(false);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -360,6 +361,7 @@ const TakeTest = () => {
         toast.success('Proctoring AI Loaded');
       } catch (err) {
         console.error('Failed to load AI models', err);
+        setModelLoadError(true);
         toast.error('Failed to load proctoring models. Please refresh.');
       }
     };
@@ -491,12 +493,33 @@ const TakeTest = () => {
     }
   };
 
-  if (!test || questions.length === 0) {
+  if (!test || questions.length === 0 || (!modelsLoaded && !modelLoadError)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
-          <p className="text-muted-foreground">Loading test environment...</p>
+          <p className="text-muted-foreground">
+            {test ? 'Loading AI Proctoring Models...' : 'Loading test environment...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (modelLoadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4 max-w-md px-4">
+          <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-semibold">Proctoring Initialization Failed</h2>
+          <p className="text-sm text-muted-foreground">
+            We could not load the necessary AI proctoring models. Please check your internet connection and try again.
+          </p>
+          <Button onClick={() => window.location.reload()} variant="default">
+            Retry
+          </Button>
         </div>
       </div>
     );

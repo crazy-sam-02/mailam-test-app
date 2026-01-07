@@ -23,21 +23,56 @@ export function getToken(): string | null {
 }
 
 async function request(path: string, opts: RequestInit = {}) {
+  const method = (opts.method || 'GET').toUpperCase();
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(opts.headers as Record<string, string> || {}) };
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'omit', headers });
-  const text = await res.text();
-  let body = null;
-  try { body = text ? JSON.parse(text) : null; } catch (e) { body = text; }
+
+  // Basic in-memory cache for GET requests (helps before query migration completes)
+  // Note: react-query will supersede most of this.
+  const cacheKey = `${method}:${API_BASE}${path}`;
+  const canCache = method === 'GET' && !opts.body;
+  const now = Date.now();
+
+  if (canCache) {
+    const hit = getCache.get(cacheKey);
+    if (hit && hit.expiresAt > now) return hit.value;
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = typeof (opts as any).timeoutMs === 'number' ? (opts as any).timeoutMs : 20_000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'omit', headers, signal: (opts as any).signal || controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  let body: any = null;
+  try {
+    if (contentType.includes('application/json')) body = await res.json();
+    else body = await res.text();
+  } catch (e) {
+    body = null;
+  }
   if (!res.ok) {
     const err = new Error(body?.error || res.statusText || 'Request failed');
     (err as Record<string, any>).status = res.status;
     (err as Record<string, any>).body = body;
     throw err;
   }
+
+  if (canCache) {
+    // Cache for a short period; do not cache auth-sensitive mutations.
+    getCache.set(cacheKey, { value: body, expiresAt: now + 5_000 });
+  }
   return body;
 }
+
+const getCache = new Map<string, { value: any; expiresAt: number }>();
 
 // Auth
 export async function apiLogin(email: string, password: string) {
@@ -117,8 +152,29 @@ export async function apiGetMyAttempts() {
   return request('/attempts/my', { method: 'GET' });
 }
 
-export async function apiGetAttemptsForTest(testId: string, page = 1, limit = 50) {
-  return request(`/tests/${testId}/attempts?page=${page}&limit=${limit}`, { method: 'GET' });
+export async function apiGetAttemptsForTest(testId: string, params: Record<string, any> = {}) {
+  const query = new URLSearchParams();
+  // Add all params to query
+  Object.keys(params).forEach(key => {
+    if (params[key] !== undefined && params[key] !== null) {
+      query.set(key, String(params[key]));
+    }
+  });
+  if (!query.has('page')) query.set('page', '1');
+  if (!query.has('limit')) query.set('limit', '50');
+  return request(`/tests/${testId}/attempts?${query.toString()}`, { method: 'GET' });
+}
+
+export async function apiGetNotAttendedForTest(testId: string, params: Record<string, any> = {}) {
+  const query = new URLSearchParams();
+  Object.keys(params).forEach(key => {
+    if (params[key] !== undefined && params[key] !== null) {
+      query.set(key, String(params[key]));
+    }
+  });
+  if (!query.has('page')) query.set('page', '1');
+  if (!query.has('limit')) query.set('limit', '50');
+  return request(`/tests/${testId}/not-attended?${query.toString()}`, { method: 'GET' });
 }
 
 // Admin: delete a test

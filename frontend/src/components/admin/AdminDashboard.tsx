@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, Plus, Users, FileText, BarChart, Sparkles } from 'lucide-react';
 import { Test, User, Attempt } from '@/types';
-import { apiGetTests, apiGetAttemptsForTest, apiGetStudents } from '@/lib/api';
+import { useStudentsQuery, useTestsQuery } from '@/hooks/useApiQueries';
 import CreateQuizDialog from './CreateQuizDialog';
 import QuizList from './QuizList';
 import StudentList from './StudentList';
@@ -14,131 +14,62 @@ import TestAttendanceView from './TestAttendanceView';
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
-  const [tests, setTests] = useState<Test[]>([]);
-  const [myTests, setMyTests] = useState<Test[]>([]);
-  const [students, setStudents] = useState<User[]>([]);
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [showCreateQuiz, setShowCreateQuiz] = useState(false);
-  // Add state for test points
-  // (moved above loadData to avoid block-scoped error)
-  const [testPoints, setTestPoints] = useState<Record<string, number>>({});
 
-  const loadData = useCallback(async () => {
-    // Fallbacks from localStorage
-    // No localStorage fallback — always load from server for consistency
-    const loadLocal = () => {
-      setTests([]);
-      setStudents([]);
-      setAttempts([]);
-    };
+  const testsQuery = useTestsQuery();
+  const studentsQuery = useStudentsQuery({ limit: 1000 }, !!user);
 
-    try {
-      const resp = await apiGetTests();
-      // resp shape: { tests: Array<any> }
-      const serverTests = Array.isArray(resp?.tests) ? resp.tests : [];
-      const mapped: Test[] = serverTests
-        .filter(Boolean)
-        .map((t: Record<string, any>) => {
-          const id = String(t._id || t.id);
-          const title = String(t.title || 'Untitled');
-          const description = String(t.description || '');
-          const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
-          const assigned = t.assignedTo || {};
-
-          let semester: string[] = [];
-          const rawSem = assigned.semester || assigned.sem;
-          if (Array.isArray(rawSem)) {
-            semester = rawSem.map(String);
-          } else if (rawSem) {
-            semester = [String(rawSem)];
-          }
-
-          const depts = assigned.departments || assigned.department || assigned.dept;
-          const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
-          // Defaults for UI compatibility
-          const durationMinutes = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
-          const attemptsAllowed = Number.isFinite(t.attemptsAllowed) ? t.attemptsAllowed : 1;
-          const shuffleQuestions = !!t.shuffleQuestions;
-          const shuffleOptions = !!t.shuffleOptions;
-          const startAt = t.startAt ? String(t.startAt) : new Date().toISOString();
-          const endAt = t.endAt ? String(t.endAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-          // Always coerce createdBy to string for comparison
-          let createdBy = t.createdBy;
-          if (createdBy && typeof createdBy === 'object' && createdBy._id) createdBy = String(createdBy._id);
-          else createdBy = String(createdBy);
-          return {
-            id,
-            title,
-            description,
-            assignedTo: { semester, departments },
-            questions: Array.from({ length: questionsCount }, (_, i) => `${id}-q${i}`),
-            durationMinutes,
-            attemptsAllowed,
-            shuffleQuestions,
-            shuffleOptions,
-            startAt,
-            endAt,
-            createdBy,
-            createdByName: t.createdByName,
-          } as Test;
-        });
-
-      setTests(mapped);
-      const myMappedTests = mapped.filter(t => String(t.createdBy) === String(user?.id || ''));
-      setMyTests(myMappedTests);
-
-      // Build testId to total points map
-      const pointsMap: Record<string, number> = {};
-      for (const t of serverTests) {
+  const tests: Test[] = useMemo(() => {
+    const serverTests = Array.isArray((testsQuery.data as any)?.tests) ? (testsQuery.data as any).tests : [];
+    return serverTests
+      .filter(Boolean)
+      .map((t: Record<string, any>) => {
         const id = String(t._id || t.id);
-        const totalPoints = Array.isArray(t.questions)
-          ? t.questions.reduce((sum, q) => sum + (q.points || 1), 0)
-          : 0;
-        pointsMap[id] = totalPoints;
-      }
-      // Fetch attempts per test from backend (first page)
-      try {
-        const allAttempts = [] as Attempt[];
-        for (const t of serverTests) {
-          const id = String(t._id || t.id);
-          const r = await apiGetAttemptsForTest(id, 1, 200);
-          const arr = Array.isArray(r?.attempts) ? r.attempts : [];
-          const title = String(t.title || 'Untitled');
-          for (const a of arr) {
-            allAttempts.push({
-              id: String(a._id || a.attemptId || crypto.randomUUID()),
-              testId: id,
-              testTitle: title,
-              studentId: String(a.student?._id || a.student || ''),
-              answers: Array.isArray(a.answers) ? a.answers.map((x: Record<string, any>) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
-              score: Number(a.score || 0),
-              startedAt: String(a.startedAt || ''),
-              finishedAt: String(a.submittedAt || a.finishedAt || ''),
-              suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
-            });
-          }
-        }
-        setAttempts(allAttempts);
-      } catch {
-        // ignore; will fallback to local attempts below
-      }
+        const title = String(t.title || 'Untitled');
+        const description = String(t.description || '');
+        const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
+        const assigned = t.assignedTo || {};
 
-      try {
-        const { students: allStudents } = await apiGetStudents({ limit: 1000 });
-        setStudents(allStudents || []);
-      } catch (error) {
-        console.error('Failed to fetch students', error);
-      }
-    } catch (e) {
-      // If request fails, clear lists and show a console message (no localStorage usage)
-      console.error('Failed to load admin data from server', e);
-      loadLocal();
-    }
-  }, [user]);
+        let semester: string[] = [];
+        const rawSem = assigned.semester || assigned.sem;
+        if (Array.isArray(rawSem)) semester = rawSem.map(String);
+        else if (rawSem) semester = [String(rawSem)];
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+        const depts = assigned.departments || assigned.department || assigned.dept;
+        const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
+        const durationMinutes = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
+        const attemptsAllowed = Number.isFinite(t.attemptsAllowed) ? t.attemptsAllowed : 1;
+        const shuffleQuestions = !!t.shuffleQuestions;
+        const shuffleOptions = !!t.shuffleOptions;
+        const startAt = t.startAt ? String(t.startAt) : new Date().toISOString();
+        const endAt = t.endAt ? String(t.endAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        let createdBy = t.createdBy;
+        if (createdBy && typeof createdBy === 'object' && createdBy._id) createdBy = String(createdBy._id);
+        else createdBy = String(createdBy);
+
+        return {
+          id,
+          title,
+          description,
+          assignedTo: { semester, departments },
+          questions: Array.from({ length: questionsCount }, (_, i) => `${id}-q${i}`),
+          durationMinutes,
+          attemptsAllowed,
+          shuffleQuestions,
+          shuffleOptions,
+          startAt,
+          endAt,
+          createdBy,
+          createdByName: t.createdByName,
+        } as Test;
+      });
+  }, [testsQuery.data]);
+
+  const students: User[] = useMemo(() => {
+    const all = (studentsQuery.data as any)?.students;
+    return Array.isArray(all) ? all : [];
+  }, [studentsQuery.data]);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -184,12 +115,10 @@ const AdminDashboard = () => {
         {/* Stats cards */}
         <div className="grid gap-6 md:grid-cols-4 mb-8 animate-fade-in">
           {(() => {
-            const malpracticeCount = attempts.filter(a => a.malpractice || a.autoSubmitted || (a.suspiciousEvents?.length || 0) > 0).length;
             return [
               { title: 'Total Tests', value: tests.length, icon: FileText, gradient: 'from-violet-500/10 to-purple-500/10', iconColor: 'text-violet-400' },
               { title: 'Students', value: students.length, icon: Users, gradient: 'from-blue-500/10 to-cyan-500/10', iconColor: 'text-cyan-400' },
-              { title: 'Total Attempts', value: attempts.length, icon: BarChart, gradient: 'from-emerald-500/10 to-green-500/10', iconColor: 'text-emerald-400' },
-              { title: 'Malpractice Cases', value: malpracticeCount, icon: Sparkles, gradient: 'from-red-500/10 to-orange-500/10', iconColor: 'text-red-400' },
+              // Removed Total Attempts and Malpractice stats as we no longer fetch all attempts
             ];
           })().map((stat, index) => (
             <Card
@@ -243,7 +172,7 @@ const AdminDashboard = () => {
                 Create New Test
               </Button>
             </div>
-            <QuizList tests={tests} onUpdate={loadData} />
+            <QuizList tests={tests} onUpdate={() => { testsQuery.refetch(); }} />
           </TabsContent>
 
           <TabsContent value="students">
@@ -251,11 +180,11 @@ const AdminDashboard = () => {
           </TabsContent>
 
           <TabsContent value="attendance">
-            <TestAttendanceView attempts={attempts} tests={tests} students={students} />
+            <TestAttendanceView tests={tests} />
           </TabsContent>
 
           <TabsContent value="results">
-            <ResultsView attempts={attempts} tests={tests} students={students} />
+            <ResultsView tests={tests} />
           </TabsContent>
         </Tabs>
       </main>
@@ -263,7 +192,7 @@ const AdminDashboard = () => {
       <CreateQuizDialog
         open={showCreateQuiz}
         onOpenChange={setShowCreateQuiz}
-        onSuccess={loadData}
+        onSuccess={() => { testsQuery.refetch(); }}
       />
     </div>
   );

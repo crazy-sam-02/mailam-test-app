@@ -19,6 +19,29 @@ These variables must be set in your backend hosting environment (e.g., Render, R
 - `JWT_SECRET`: Long random string to sign JWTs.
 - `JWT_EXPIRES_IN`: Token TTL (e.g., `7d`).
 
+##### AI Configuration (Backend)
+
+The backend supports multiple AI providers for question generation (used by `POST /api/tests/upload`).
+
+- `AI_PROVIDER`: `gemini` (default), `openai`, `groq`, or `mock`.
+- `GOOGLE_API_KEY`: Required when `AI_PROVIDER=gemini`.
+- `GEMINI_MODEL`: Optional (default: `gemini-1.5-flash`).
+- `OPENAI_API_KEY`: Required when `AI_PROVIDER=openai`.
+- `OPENAI_MODEL`: Optional (default: `gpt-4o-mini`).
+- `GROQ_API_KEY`: Required when `AI_PROVIDER=groq`.
+- `GROQ_MODEL`: Optional.
+
+Safety/performance limits:
+
+- `UPLOAD_MAX_BYTES`: Max uploaded file size in bytes (default 10MB).
+- `AI_MAX_INPUT_CHARS`: Max extracted text chars sent to AI (default 30000).
+
+To enable a specific OpenAI model for all clients, set:
+
+- `AI_PROVIDER=openai`
+- `OPENAI_MODEL=gpt-5.1-codex-max`
+- `OPENAI_API_KEY=...`
+
 #### Frontend (`frontend/.env`)
 
 These variables must be set in your frontend hosting environment (e.g., Vercel, Netlify).
