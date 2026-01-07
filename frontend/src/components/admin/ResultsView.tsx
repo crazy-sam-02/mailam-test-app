@@ -1,18 +1,11 @@
+import { useMemo, useState } from 'react';
 import { Attempt, Test, User } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Download, Filter, Search, ShieldCheck, Sparkles } from 'lucide-react';
 import { formatDurationMs } from '@/lib/utils';
-
-interface ResultsViewProps {
-  attempts: Attempt[];
-  tests: Test[];
-  students: User[];
-}
-
-import { useMemo, useState } from 'react';
 import { useAttemptsForTestQuery } from '@/hooks/useApiQueries';
 import {
   Dialog,
@@ -32,7 +25,6 @@ import {
 } from '@/components/ui/select';
 
 import { convertToCSV, downloadCSV } from '@/lib/csvUtils';
-import { Download } from 'lucide-react';
 
 const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?: User[] }) => {
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
@@ -73,6 +65,17 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
     return Array.isArray(arr) ? arr : [];
   }, [attemptsQuery.data]);
 
+  const metrics = useMemo(() => {
+    const total = resultsFromQuery.length;
+    const passed = resultsFromQuery.filter((a) => Number(a.score || 0) >= 70).length;
+    const malpractice = resultsFromQuery.filter((a) => {
+      const suspiciousCount = a.suspiciousEvents?.length || 0;
+      return !!a.malpractice || suspiciousCount > 0 || !!(a as any).autoSubmitted;
+    }).length;
+    const avg = total ? Math.round(resultsFromQuery.reduce((s, a) => s + Number(a.score || 0), 0) / total) : 0;
+    return { total, passed, malpractice, avg };
+  }, [resultsFromQuery]);
+
   const handleExport = () => {
     if (!resultsFromQuery || resultsFromQuery.length === 0) return;
 
@@ -104,26 +107,47 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
   };
 
   if (!selectedTestId) {
-    // ... (existing test selection)
     return (
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold">Select a Test to View Results</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tests.map(test => (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">Results</h2>
+            <p className="text-sm text-muted-foreground">Pick a test to explore student performance and integrity signals.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded-full border bg-card px-3 py-1">
+              <Sparkles className="h-3.5 w-3.5" />
+              Fast filters
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border bg-card px-3 py-1">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Malpractice insights
+            </span>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {tests.map((test) => (
             <Card
               key={test.id}
-              className="cursor-pointer hover:bg-accent/5 transition-colors border-l-4 border-l-primary"
+              className="group cursor-pointer overflow-hidden transition-all hover:shadow-lg"
               onClick={() => setSelectedTestId(test.id)}
             >
-              <CardHeader>
-                <CardTitle className="text-lg">{test.title}</CardTitle>
+              <CardHeader className="space-y-1">
+                <CardTitle className="text-lg group-hover:text-primary transition-colors">{test.title}</CardTitle>
+                {test.description ? (
+                  <CardDescription className="line-clamp-2">{test.description}</CardDescription>
+                ) : (
+                  <CardDescription>Open analytics and student attempts.</CardDescription>
+                )}
               </CardHeader>
-              <CardContent>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <div className="pt-2 flex justify-end">
-                    <Badge variant="secondary">View Results</Badge>
-                  </div>
+              <CardContent className="flex items-center justify-between">
+                <div className="text-xs text-muted-foreground">
+                  {Array.isArray(test.questions) ? `${test.questions.length} questions` : 'Questions'}
                 </div>
+                <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/15" variant="secondary">
+                  View
+                </Badge>
               </CardContent>
             </Card>
           ))}
@@ -133,33 +157,115 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="sm" onClick={() => { setSelectedTestId(null); }}>
-            &larr; Back to Tests
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSelectedTestId(null);
+              setSelectedAttempt(null);
+              setSelectedStudent(null);
+            }}
+            className="gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Tests
           </Button>
-          <h2 className="text-xl font-bold">{selectedTest?.title || 'Unknown Test'} - Results</h2>
-          {loading && <span className="text-sm text-muted-foreground animate-pulse">Loading...</span>}
+          <div className="min-w-0">
+            <h2 className="text-2xl font-semibold tracking-tight">{selectedTest?.title || 'Unknown Test'}</h2>
+            <p className="text-sm text-muted-foreground">Results, ranking and integrity signals</p>
+          </div>
+          {loading ? <span className="text-xs text-muted-foreground animate-pulse">Syncing…</span> : null}
         </div>
-        <Button onClick={handleExport} disabled={resultsFromQuery.length === 0} size="sm" className="gap-2">
-          <Download className="w-4 h-4" /> Export CSV
-        </Button>
+
+        <div className="flex items-center gap-2 md:justify-end">
+          <Button onClick={handleExport} disabled={resultsFromQuery.length === 0} size="sm" className="gap-2">
+            <Download className="h-4 w-4" />
+            Export
+          </Button>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col md:flex-row gap-4 justify-between items-end md:items-center">
-          <div className="flex flex-wrap gap-4 w-full">
-            <div className="w-full md:w-48">
-              <label className="text-sm font-medium mb-1 block">Search Student</label>
-              <Input
-                placeholder="Search by name, enrollment or register no..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="space-y-0">
+            <CardDescription>Total Attempts</CardDescription>
+            <CardTitle className="text-3xl">{metrics.total}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="space-y-0">
+            <CardDescription>Passed</CardDescription>
+            <CardTitle className="text-3xl">{metrics.passed}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="space-y-0">
+            <CardDescription>Integrity Flags</CardDescription>
+            <CardTitle className="text-3xl">{metrics.malpractice}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="space-y-0">
+            <CardDescription>Avg. Score</CardDescription>
+            <CardTitle className="text-3xl">{metrics.avg}</CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Filter className="h-4 w-4" />
+                </span>
+                Filters
+              </CardTitle>
+              <CardDescription>Refine by status, department, year and flags.</CardDescription>
             </div>
-            <div className="w-full md:w-32">
-              <label className="text-sm font-medium mb-1 block">Status</label>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('all');
+                  setMalpracticeFilter('all');
+                  setDeptFilter('all');
+                  setYearFilter('all');
+                  setSectionFilter('all');
+                  setSortConfig('score-desc');
+                }}
+              >
+                Reset
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-4 p-4 md:p-6">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Search</label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Name, enrollment, register no…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Status</label>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="All" />
@@ -171,8 +277,9 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
                 </SelectContent>
               </Select>
             </div>
-            <div className="w-full md:w-32">
-              <label className="text-sm font-medium mb-1 block">Malpractice</label>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Malpractice</label>
               <Select value={malpracticeFilter} onValueChange={setMalpracticeFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="All" />
@@ -185,8 +292,33 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
               </Select>
             </div>
 
-            <div className="w-full md:w-32">
-              <label className="text-sm font-medium mb-1 block">Dept</label>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Sort</label>
+              <Select value={sortConfig} onValueChange={setSortConfig}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="score-desc">Score (High-Low)</SelectItem>
+                  <SelectItem value="score-asc">Score (Low-High)</SelectItem>
+                  <SelectItem value="time-asc">Time (Fast-Slow)</SelectItem>
+                  <SelectItem value="time-desc">Time (Slow-Fast)</SelectItem>
+                  <SelectItem value="name-asc">Name (A-Z)</SelectItem>
+                  <SelectItem value="name-desc">Name (Z-A)</SelectItem>
+                  <SelectItem value="dept-asc">Dept (A-Z)</SelectItem>
+                  <SelectItem value="dept-desc">Dept (Z-A)</SelectItem>
+                  <SelectItem value="year-asc">Year (Asc)</SelectItem>
+                  <SelectItem value="year-desc">Year (Desc)</SelectItem>
+                  <SelectItem value="section-asc">Section (A-Z)</SelectItem>
+                  <SelectItem value="section-desc">Section (Z-A)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Dept</label>
               <Select value={deptFilter} onValueChange={setDeptFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="All" />
@@ -198,8 +330,8 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
               </Select>
             </div>
 
-            <div className="w-full md:w-24">
-              <label className="text-sm font-medium mb-1 block">Year</label>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Year</label>
               <Select value={yearFilter} onValueChange={setYearFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="All" />
@@ -215,8 +347,8 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
               </Select>
             </div>
 
-            <div className="w-full md:w-24">
-              <label className="text-sm font-medium mb-1 block">Sec</label>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Section</label>
               <Select value={sectionFilter} onValueChange={setSectionFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="All" />
@@ -227,39 +359,24 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          <div className="w-full md:w-48 flex-shrink-0">
-            <label className="text-sm font-medium mb-1 block">Sort By</label>
-            <Select value={sortConfig} onValueChange={setSortConfig}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="score-desc">Score (High-Low)</SelectItem>
-                <SelectItem value="score-asc">Score (Low-High)</SelectItem>
-                <SelectItem value="time-asc">Time (Fast-Slow)</SelectItem>
-                <SelectItem value="time-desc">Time (Slow-Fast)</SelectItem>
-                <SelectItem value="name-asc">Name (A-Z)</SelectItem>
-                <SelectItem value="name-desc">Name (Z-A)</SelectItem>
-                <SelectItem value="dept-asc">Dept (A-Z)</SelectItem>
-                <SelectItem value="dept-desc">Dept (Z-A)</SelectItem>
-                <SelectItem value="year-asc">Year (Asc)</SelectItem>
-                <SelectItem value="year-desc">Year (Desc)</SelectItem>
-                <SelectItem value="section-asc">Section (A-Z)</SelectItem>
-                <SelectItem value="section-desc">Section (Z-A)</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-3 flex items-end">
+              <div className="w-full rounded-2xl border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+                Showing <span className="font-medium text-foreground">{resultsFromQuery.length}</span> attempts for this test.
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Detailed Results ({resultsFromQuery.length})</CardTitle>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b">
+          <CardTitle>Leaderboard</CardTitle>
+          <CardDescription>Click a student name for profile. Click a flag for details.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Table>
+        <CardContent className="p-0">
+          <div className="w-full overflow-x-auto">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">Rank</TableHead>
@@ -280,7 +397,7 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
                 return (
                   <TableRow
                     key={String((attempt as any)._id || (attempt as any).attemptId || attempt.id || `${selectedTestId}-${index}`)}
-                    className={hasMalpractice ? 'bg-red-50/50' : ''}
+                    className={hasMalpractice ? 'bg-destructive/5' : ''}
                   >
                     <TableCell className="font-bold text-muted-foreground">#{index + 1}</TableCell>
                     <TableCell
@@ -292,7 +409,7 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Badge variant={attempt.score >= 70 ? 'default' : 'secondary'}>
-                          {attempt.score}%
+                          {attempt.score}
                         </Badge>
                         {isAutoSubmitted && (
                           <Badge variant="destructive" className="text-xs">AUTO</Badge>
@@ -321,7 +438,7 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
                             </div>
                           )}
                           {suspiciousCount > 0 && (
-                            <div className="text-xs text-red-600">
+                            <div className="text-xs text-destructive">
                               {suspiciousCount} suspicious events
                             </div>
                           )}
@@ -341,7 +458,8 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
                 </TableRow>
               )}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
         </CardContent>
 
         <Dialog open={!!selectedAttempt} onOpenChange={(open) => !open && setSelectedAttempt(null)}>
@@ -392,29 +510,29 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
             </DialogHeader>
             {selectedStudent && (
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid gap-1 sm:grid-cols-4 sm:items-center sm:gap-4">
                   <span className="font-semibold">Name:</span>
-                  <span className="col-span-3">{selectedStudent.name}</span>
+                  <span className="sm:col-span-3">{selectedStudent.name}</span>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid gap-1 sm:grid-cols-4 sm:items-center sm:gap-4">
                   <span className="font-semibold">Email:</span>
-                  <span className="col-span-3">{selectedStudent.email}</span>
+                  <span className="sm:col-span-3 break-words">{selectedStudent.email}</span>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid gap-1 sm:grid-cols-4 sm:items-center sm:gap-4">
                   <span className="font-semibold">Enrollment:</span>
-                  <span className="col-span-3">{selectedStudent.enrollmentNumber || 'N/A'}</span>
+                  <span className="sm:col-span-3 break-words">{selectedStudent.enrollmentNumber || 'N/A'}</span>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid gap-1 sm:grid-cols-4 sm:items-center sm:gap-4">
                   <span className="font-semibold">Dept:</span>
-                  <span className="col-span-3">{selectedStudent.dept || 'N/A'}</span>
+                  <span className="sm:col-span-3">{selectedStudent.dept || 'N/A'}</span>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid gap-1 sm:grid-cols-4 sm:items-center sm:gap-4">
                   <span className="font-semibold">Year/Sem:</span>
-                  <span className="col-span-3">{selectedStudent.year} / {selectedStudent.semester}</span>
+                  <span className="sm:col-span-3">{selectedStudent.year} / {selectedStudent.semester}</span>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid gap-1 sm:grid-cols-4 sm:items-center sm:gap-4">
                   <span className="font-semibold">Section:</span>
-                  <span className="col-span-3">{selectedStudent.section || 'N/A'}</span>
+                  <span className="sm:col-span-3">{selectedStudent.section || 'N/A'}</span>
                 </div>
               </div>
             )}
