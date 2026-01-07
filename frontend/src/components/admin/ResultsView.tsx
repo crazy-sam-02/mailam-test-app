@@ -31,6 +31,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+import { convertToCSV, downloadCSV } from '@/lib/csvUtils';
+import { Download } from 'lucide-react';
+
 const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?: User[] }) => {
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [selectedAttempt, setSelectedAttempt] = useState<Attempt | null>(null);
@@ -70,7 +73,38 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
     return Array.isArray(arr) ? arr : [];
   }, [attemptsQuery.data]);
 
+  const handleExport = () => {
+    if (!resultsFromQuery || resultsFromQuery.length === 0) return;
+
+    const dataToExport = resultsFromQuery.map((attempt: any) => ({
+      Rank: '', // Will be filled by row index if needed, or omitted
+      StudentName: attempt.student?.name || 'Unknown',
+      Email: attempt.student?.email || 'N/A',
+      Dept: attempt.student?.dept || 'N/A',
+      Year: attempt.student?.year || 'N/A',
+      Section: attempt.student?.section || 'N/A',
+      Score: attempt.score,
+      TotalQuestions: attempt.totalQuestions || 0,
+      Percentage: attempt.percentage ? attempt.percentage.toFixed(2) : '0',
+      Status: attempt.score >= 70 ? 'Pass' : 'Fail', // Assuming 70 is pass logic matches UI
+      TimeTaken: attempt.submittedAt && attempt.startedAt
+        ? formatDurationMs(new Date(attempt.submittedAt).getTime() - new Date(attempt.startedAt).getTime())
+        : 'N/A',
+      Malpractice: attempt.malpractice ? 'Yes' : 'No',
+      MalpracticeReason: attempt.malpracticeReason || '',
+      SuspiciousEvents: attempt.suspiciousEvents?.length || 0,
+      SubmittedAt: attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : 'N/A'
+    }));
+
+    // Add Rank
+    dataToExport.forEach((row, index) => { row.Rank = String(index + 1); });
+
+    const csv = convertToCSV(dataToExport, ['Rank', 'StudentName', 'Email', 'Dept', 'Year', 'Section', 'Score', 'Percentage', 'Status', 'TimeTaken', 'Malpractice', 'MalpracticeReason', 'SuspiciousEvents', 'SubmittedAt']);
+    downloadCSV(csv, `${selectedTest?.title || 'test'}_results.csv`);
+  };
+
   if (!selectedTestId) {
+    // ... (existing test selection)
     return (
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Select a Test to View Results</h2>
@@ -100,12 +134,17 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="sm" onClick={() => { setSelectedTestId(null); }}>
-          &larr; Back to Tests
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => { setSelectedTestId(null); }}>
+            &larr; Back to Tests
+          </Button>
+          <h2 className="text-xl font-bold">{selectedTest?.title || 'Unknown Test'} - Results</h2>
+          {loading && <span className="text-sm text-muted-foreground animate-pulse">Loading...</span>}
+        </div>
+        <Button onClick={handleExport} disabled={resultsFromQuery.length === 0} size="sm" className="gap-2">
+          <Download className="w-4 h-4" /> Export CSV
         </Button>
-        <h2 className="text-xl font-bold">{selectedTest?.title || 'Unknown Test'} - Results</h2>
-        {loading && <span className="text-sm text-muted-foreground animate-pulse">Loading...</span>}
       </div>
 
       <div className="flex flex-col gap-4">
@@ -114,7 +153,7 @@ const ResultsView = ({ tests }: { tests: Test[], attempts?: Attempt[], students?
             <div className="w-full md:w-48">
               <label className="text-sm font-medium mb-1 block">Search Student</label>
               <Input
-                placeholder="Search by name..."
+                placeholder="Search by name, enrollment or register no..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />

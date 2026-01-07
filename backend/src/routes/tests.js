@@ -686,21 +686,34 @@ router.get(
         {
           $match: {
             ...(search
-              ? { "student.name": { $regex: search, $options: "i" } }
+              ? {
+                $or: [
+                  { "student.name": { $regex: search, $options: "i" } },
+                  { "student.enrollmentNumber": { $regex: search, $options: "i" } },
+                  { "student.registerNumber": { $regex: search, $options: "i" } },
+                ]
+              }
               : {}),
             ...(dept && dept !== "all"
               ? {
                 "student.dept": {
-                  $regex: `^${dept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+                  $regex: dept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
                   $options: "i",
                 },
               }
               : {}),
-            ...(year && year !== "all" ? { "student.year": year } : {}),
+            ...(year && year !== "all"
+              ? {
+                "student.year": {
+                  $regex: year.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                  $options: "i",
+                },
+              }
+              : {}),
             ...(section && section !== "all"
               ? {
                 "student.section": {
-                  $regex: `^${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+                  $regex: section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
                   $options: "i",
                 },
               }
@@ -805,33 +818,28 @@ router.get(
         "student"
       );
 
-      // 2. Build query for Eligible Students Excluding Attended
+      // 2. Build Base Query
       const query = {
         _id: { $nin: attendedStudentIds },
-        role: "student", // Ensure only students
+        role: "student",
       };
 
-      // Apply Test Assignment Filters (Who is supposed to take this?)
-      // Note: This logic assumes 'assignedTo' works as specific whitelists.
-      // If empty, it means 'everyone'? Usually empty means 'no one' or 'depends on implementation'.
-      // Assuming if departments is empty, maybe no one is assigned? Or everyone?
-      // Let's assume strict filtering if arrays exist.
+      // We will use an $and array to safely combine assignment constraints and user filters
+      const andConditions = [];
+
+      // Apply Test Assignment Constraints
       if (test.assignedTo) {
-        if (
-          test.assignedTo.departments &&
-          test.assignedTo.departments.length > 0
-        ) {
-          query.dept = { $in: test.assignedTo.departments };
+        if (test.assignedTo.departments && test.assignedTo.departments.length > 0) {
+          andConditions.push({ dept: { $in: test.assignedTo.departments } });
         }
         if (test.assignedTo.year && test.assignedTo.year.length > 0) {
-          query.year = { $in: test.assignedTo.year };
+          andConditions.push({ year: { $in: test.assignedTo.year } });
         }
         if (test.assignedTo.section && test.assignedTo.section.length > 0) {
-          query.section = { $in: test.assignedTo.section };
+          andConditions.push({ section: { $in: test.assignedTo.section } });
         }
         if (test.assignedTo.semester && test.assignedTo.semester.length > 0) {
-          // semester is often mixed type, ensure matching string
-          query.semester = { $in: test.assignedTo.semester.map(String) };
+          andConditions.push({ semester: { $in: test.assignedTo.semester.map(String) } });
         }
       }
 
@@ -846,19 +854,47 @@ router.get(
         sortBy,
       } = req.query;
 
-      if (search) query.name = { $regex: search, $options: "i" };
-      if (dept && dept !== "all") {
-        query.dept = {
-          $regex: `^${dept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-          $options: "i",
-        };
+      if (search) {
+        // Use $and to ensure this search condition is added to the main query which might already have an $and
+        if (!query.$and) query.$and = [];
+        query.$and.push({
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { enrollmentNumber: { $regex: search, $options: "i" } },
+            { registerNumber: { $regex: search, $options: "i" } },
+          ]
+        });
       }
-      if (year && year !== "all") query.year = year;
+
+      if (dept && dept !== "all") {
+        andConditions.push({
+          dept: {
+            $regex: dept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            $options: "i",
+          },
+        });
+      }
+
+      if (year && year !== "all") {
+        andConditions.push({
+          year: {
+            $regex: year.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            $options: "i",
+          },
+        });
+      }
+
       if (section && section !== "all") {
-        query.section = {
-          $regex: `^${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-          $options: "i",
-        };
+        andConditions.push({
+          section: {
+            $regex: section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            $options: "i",
+          },
+        });
+      }
+
+      if (andConditions.length > 0) {
+        query.$and = andConditions;
       }
 
       // 4. Sort

@@ -28,6 +28,15 @@ import '@tensorflow/tfjs-backend-cpu';
 
 const STORAGE_KEY_PREFIX = 'scholar_shield_attempt_';
 
+function shuffleArray<T>(array: T[]): T[] {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+}
+
 const TakeTest = () => {
   const { testId } = useParams();
   const { user } = useAuth();
@@ -35,7 +44,7 @@ const TakeTest = () => {
 
   // State
   const [test, setTest] = useState<Test | null>(null);
-  const [questions, setQuestions] = useState<Array<{ id: string; text: string; options: string[] }>>([]);
+  const [questions, setQuestions] = useState<Array<{ id: string; text: string; options: Array<{ text: string; originalIndex: number }> }>>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({}); // Map questionId -> optionIndex
   const [suspiciousEvents, setSuspiciousEvents] = useState<SuspiciousEvent[]>([]);
@@ -100,16 +109,40 @@ const TakeTest = () => {
         const t = res?.test;
         if (!t) throw new Error('Test not found');
 
-        const qs = Array.isArray(t.questions)
-          ? t.questions.map((q: any) => ({
-            id: String(q.id || q._id || ''),
-            text: String(q.text || ''),
-            options: (q.options || []).map(String)
-          }))
-          : [];
+        // Check for saved question state to maintain shuffle consistency
+        const questionsStorageKey = `${STORAGE_KEY_PREFIX}questions_${testId}_${user.id}`;
+        const savedQuestionsState = localStorage.getItem(questionsStorageKey);
+
+        let processedQuestions: Array<{ id: string; text: string; options: Array<{ text: string; originalIndex: number }> }>;
+
+        if (savedQuestionsState) {
+          processedQuestions = JSON.parse(savedQuestionsState);
+        } else {
+          // Process and shuffle
+          const rawQuestions = Array.isArray(t.questions) ? t.questions : [];
+          let mapped = rawQuestions.map((q: any) => {
+            // Create options with original index
+            let opts = (q.options || []).map((o: string, i: number) => ({ text: String(o), originalIndex: i }));
+            if (t.shuffleOptions) {
+              opts = shuffleArray(opts);
+            }
+            return {
+              id: String(q.id || q._id || ''),
+              text: String(q.text || ''),
+              options: opts
+            };
+          });
+
+          if (t.shuffleQuestions) {
+            mapped = shuffleArray(mapped);
+          }
+          processedQuestions = mapped;
+          // Save immediately so it persists across reloads
+          localStorage.setItem(questionsStorageKey, JSON.stringify(processedQuestions));
+        }
 
         setTest(t);
-        setQuestions(qs);
+        setQuestions(processedQuestions);
 
         // 2. Restore or Start Attempt
         const storageKey = `${STORAGE_KEY_PREFIX}${testId}_${user.id}`;
@@ -632,11 +665,11 @@ const TakeTest = () => {
             </CardHeader>
             <CardContent className="grid gap-3">
               {currentQ.options.map((opt, idx) => {
-                const isSelected = answers[currentQ.id] === idx;
+                const isSelected = answers[currentQ.id] === opt.originalIndex;
                 return (
                   <div
                     key={idx}
-                    onClick={() => handleAnswer(idx)}
+                    onClick={() => handleAnswer(opt.originalIndex)}
                     className={`
                       relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-200
                       ${isSelected
@@ -652,7 +685,7 @@ const TakeTest = () => {
                       `}>
                         {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
                       </div>
-                      <span className="text-base">{opt}</span>
+                      <span className="text-base">{opt.text}</span>
                     </div>
                   </div>
                 );

@@ -7,6 +7,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { apiGetStudent } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { convertToCSV, downloadCSV } from '@/lib/csvUtils';
+import { Download } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface StudentListProps {
   students: User[];
@@ -73,12 +77,36 @@ const StudentList = ({ students }: StudentListProps) => {
     });
   }, [students, searchTerm, deptFilter, yearFilter, sectionFilter]);
 
+  const handleExport = () => {
+    if (filteredStudents.length === 0) {
+      toast.error('No students to export');
+      return;
+    }
+    const data = filteredStudents.map(s => ({
+      Name: s.name,
+      Email: s.email,
+      Department: s.dept || '',
+      Year: s.year || '',
+      Section: s.section || '',
+      Semester: s.semester || '',
+      EnrollmentNumber: s.enrollmentNumber || '',
+      RegisterNumber: s.registerNumber || ''
+    }));
+    const csv = convertToCSV(data);
+    downloadCSV(csv, 'students_list.csv');
+  };
 
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Students Directory</CardTitle>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredStudents.length === 0}>
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {/* Search and Filters Bar */}

@@ -113,35 +113,7 @@ const AdminDashboard = () => {
 
       <main className="relative container mx-auto px-6 py-8">
         {/* Stats cards */}
-        <div className="grid gap-6 md:grid-cols-4 mb-8 animate-fade-in">
-          {(() => {
-            return [
-              { title: 'Total Tests', value: tests.length, icon: FileText, gradient: 'from-violet-500/10 to-purple-500/10', iconColor: 'text-violet-400' },
-              { title: 'Students', value: students.length, icon: Users, gradient: 'from-blue-500/10 to-cyan-500/10', iconColor: 'text-cyan-400' },
-              // Removed Total Attempts and Malpractice stats as we no longer fetch all attempts
-            ];
-          })().map((stat, index) => (
-            <Card
-              key={index}
-              className="backdrop-blur-xl bg-white/5 border-white/10 hover:bg-white/10 transition-all hover:scale-105 group"
-              style={{ animationDelay: `${index * 0.1}s` }}
-            >
-              <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} rounded-xl opacity-0 group-hover:opacity-100 transition-opacity`} />
-              <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-foreground">{stat.title}</CardTitle>
-                <div className="w-10 h-10 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <stat.icon className={`h-5 w-5 ${stat.iconColor}`} />
-                </div>
-              </CardHeader>
-              <CardContent className="relative">
-                <div className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                  {stat.value}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
+        
         {/* Tabs */}
         <Tabs defaultValue="tests" className="space-y-6">
           <TabsList className="backdrop-blur-xl bg-white/5 border border-white/10 p-1">

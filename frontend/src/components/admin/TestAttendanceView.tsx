@@ -25,6 +25,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 
+import { convertToCSV, downloadCSV } from '@/lib/csvUtils';
+import { Download } from 'lucide-react';
+
 const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<User | null>(null);
@@ -92,7 +95,43 @@ const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
   const years = ['1', '2', '3', '4'];
   const sections = ['A', 'B', 'C', 'D'];
 
+  const handleExport = () => {
+    if (activeTab === 'attended') {
+      if (!attendedData || attendedData.length === 0) return;
+      const data = attendedData.map((attempt: any) => ({
+        StudentName: attempt.student?.name || 'Unknown',
+        Enrollment: attempt.student?.enrollmentNumber || 'N/A',
+        Dept: attempt.student?.dept || 'N/A',
+        Year: attempt.student?.year || 'N/A',
+        Section: attempt.student?.section || 'N/A',
+        Score: attempt.score,
+        Status: attempt.score >= 70 ? 'Pass' : 'Fail',
+        TimeTaken: attempt.submittedAt && attempt.startedAt
+          ? formatDurationMs(new Date(attempt.submittedAt).getTime() - new Date(attempt.startedAt).getTime())
+          : 'N/A',
+        SubmittedAt: attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : 'N/A'
+      }));
+      const csv = convertToCSV(data);
+      downloadCSV(csv, `${selectedTest?.title || 'test'}_attended_page_${attendedPage}.csv`);
+    } else {
+      if (!notAttendedData || notAttendedData.length === 0) return;
+      const data = notAttendedData.map((student: User) => ({
+        Name: student.name,
+        Email: student.email,
+        Dept: student.dept || '',
+        Year: student.year || '',
+        Semester: student.semester || '',
+        Section: student.section || '',
+        Enrollment: student.enrollmentNumber || '',
+        RegisterNumber: student.registerNumber || ''
+      }));
+      const csv = convertToCSV(data);
+      downloadCSV(csv, `${selectedTest?.title || 'test'}_not_attended_page_${notAttendedPage}.csv`);
+    }
+  };
+
   if (!selectedTestId) {
+    // ... (existing selection view)
     return (
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Select a Test to View Attendance</h2>
@@ -118,6 +157,8 @@ const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
       </div>
     );
   }
+
+  // ... (PaginationControls component)
 
   const PaginationControls = ({
     page,
@@ -158,11 +199,16 @@ const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="sm" onClick={() => setSelectedTestId(null)}>
-          &larr; Back to Tests
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => setSelectedTestId(null)}>
+            &larr; Back to Tests
+          </Button>
+          <h2 className="text-xl font-bold">{selectedTest?.title || 'Unknown Test'} - Attendance</h2>
+        </div>
+        <Button onClick={handleExport} size="sm" variant="outline" className="gap-2">
+          <Download className="w-4 h-4" /> Export Page CSV
         </Button>
-        <h2 className="text-xl font-bold">{selectedTest?.title || 'Unknown Test'} - Attendance</h2>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -184,38 +230,12 @@ const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
                 <div className="w-full md:w-48">
                   <label className="text-sm font-medium mb-1 block">Search Student</label>
                   <Input
-                    placeholder="Search by name..."
+                    placeholder="Search by name, enrollment or register no..."
                     value={attendedSearchTerm}
                     onChange={(e) => setAttendedSearchTerm(e.target.value)}
                   />
                 </div>
-                <div className="w-full md:w-32">
-                  <label className="text-sm font-medium mb-1 block">Status</label>
-                  <Select value={attendedStatusFilter} onValueChange={setAttendedStatusFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="pass">Passed</SelectItem>
-                      <SelectItem value="fail">Failed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                <div className="w-full md:w-32">
-                  <label className="text-sm font-medium mb-1 block">Malpractice</label>
-                  <Select value={attendedMalpracticeFilter} onValueChange={setAttendedMalpracticeFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="yes">Detected</SelectItem>
-                      <SelectItem value="no">Clean</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
                 <div className="w-full md:w-32">
                   <label className="text-sm font-medium mb-1 block">Dept</label>
@@ -270,10 +290,6 @@ const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
                   <SelectContent>
                     <SelectItem value="name-asc">Name (A-Z)</SelectItem>
                     <SelectItem value="name-desc">Name (Z-A)</SelectItem>
-                    <SelectItem value="score-desc">Score (High-Low)</SelectItem>
-                    <SelectItem value="score-asc">Score (Low-High)</SelectItem>
-                    <SelectItem value="time-asc">Time (Fast-Slow)</SelectItem>
-                    <SelectItem value="time-desc">Time (Slow-Fast)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -344,7 +360,7 @@ const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
                 <div className="w-full md:w-48">
                   <label className="text-sm font-medium mb-1 block">Search Student</label>
                   <Input
-                    placeholder="Search by name..."
+                    placeholder="Search by name, enrollment or register no..."
                     value={notAttendedSearchTerm}
                     onChange={(e) => setNotAttendedSearchTerm(e.target.value)}
                   />
