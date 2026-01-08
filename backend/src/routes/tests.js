@@ -5,7 +5,6 @@ const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 const Test = require("../models/Test");
 const Attempt = require("../models/Attempt");
-const User = require("../models/User");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
 const fs = require("fs");
 const path = require("path");
@@ -13,12 +12,7 @@ const mammoth = require("mammoth");
 const pdfParse = require("pdf-parse");
 const { extractQuestionsFromTextGemini } = require("../services/ai");
 
-const upload = multer({
-  dest: "uploads/",
-  limits: {
-    fileSize: Number(process.env.UPLOAD_MAX_BYTES || 10 * 1024 * 1024), // 10MB default
-  },
-});
+const upload = multer({ dest: "uploads/" });
 
 // list tests - admins see all; students only see tests for their department
 router.get("/", requireAuth, async (req, res, next) => {
@@ -68,6 +62,16 @@ router.get("/", requireAuth, async (req, res, next) => {
       }
       // if admin has no dept (super-admin), return all tests (paginated)
       const query = {};
+
+      const { year, semester, dept, section } = req.query;
+      if (year) query["assignedTo.year"] = year;
+      // Handle both department and dept query params
+      const d = dept || req.query.department;
+      if (d) query["assignedTo.departments"] = d;
+      // Handle both semester and sem
+      const s = semester || req.query.sem;
+      if (s) query["assignedTo.semester"] = s;
+      if (section) query["assignedTo.section"] = section;
       const [tests, total] = await Promise.all([
         Test.find(query)
           .select("-questions.correctAnswer")
@@ -90,38 +94,28 @@ router.get("/", requireAuth, async (req, res, next) => {
     }
     const dept = String(deptRaw).trim();
     const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Support legacy shapes (assignedTo.department or assignedTo.dept) and be case-insensitive / whitespace-tolerant
-    const regexPattern = `^\\s*${escapeRegex(dept)}\\s*$`;
+    // Support legacy shapes (assignedTo.department or assignedTo.dept) and be case-insensitive
     const query = {
       $or: [
         {
           "assignedTo.departments": {
-            $regex: regexPattern,
-            $options: "i",
+            $in: [dept, dept.toUpperCase(), dept.toLowerCase()],
           },
         },
         {
           "assignedTo.department": {
-            $regex: regexPattern,
+            $regex: `^${escapeRegex(dept)}$`,
             $options: "i",
           },
         },
         {
           "assignedTo.dept": {
-            $regex: regexPattern,
+            $regex: `^${escapeRegex(dept)}$`,
             $options: "i",
           },
         },
       ],
     };
-
-    console.log('[DEBUG] Student Test Fetch:', {
-      user: req.user.email,
-      deptRaw: deptRaw,
-      regex: regexPattern,
-      query: JSON.stringify(query)
-    });
-
     const [tests, total] = await Promise.all([
       Test.find(query)
         .select("-questions.correctAnswer")
@@ -150,8 +144,8 @@ router.post(
 
       const filePath = req.file.path;
       const ext = path.extname(req.file.originalname).toLowerCase();
-      const difficulty = String(req.body.difficulty || "Medium");
-      const questionType = String(req.body.questionType || "Multiple Choice");
+      const difficulty = req.body.difficulty || "Medium";
+      const questionType = req.body.questionType || "Multiple Choice";
 
       let text = "";
       let questions = [];
@@ -188,22 +182,14 @@ router.post(
         // cleanup uploaded file
         try {
           fs.unlinkSync(filePath);
-        } catch (e) { }
+        } catch (e) {}
       }
 
       if (!text || text.trim().length < 50) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Could not extract enough text from file to generate questions.",
-          });
-      }
-
-      // Cap text sent to AI (provider also truncates, but we keep server memory bounded)
-      const maxChars = Number(process.env.AI_MAX_INPUT_CHARS || 30_000);
-      if (text.length > maxChars) {
-        text = text.slice(0, maxChars);
+        return res.status(400).json({
+          error:
+            "Could not extract enough text from file to generate questions.",
+        });
       }
 
       // Call AI Service
@@ -216,22 +202,16 @@ router.post(
         res.json({ questions, method: "gemini-ai" });
       } catch (aiError) {
         console.error("[AI Service Error]", aiError);
-        return res
-          .status(502)
-          .json({
-            error:
-              aiError.message ||
-              "AI processing failed. Check server logs/keys.",
-          });
+        return res.status(502).json({
+          error:
+            aiError.message || "AI processing failed. Check server logs/keys.",
+        });
       }
     } catch (err) {
-      if (err && err.code === "LIMIT_FILE_SIZE") {
-        return res.status(413).json({ error: "Uploaded file is too large" });
-      }
       if (req.file && req.file.path) {
         try {
           fs.unlinkSync(req.file.path);
-        } catch (e) { }
+        } catch (e) {}
       }
       next(err);
     }
@@ -253,23 +233,23 @@ router.post("/", requireAuth, requireAdmin, async (req, res, next) => {
     const departments = Array.isArray(depts)
       ? depts.map(String)
       : depts
-        ? [String(depts)]
-        : [];
+      ? [String(depts)]
+      : [];
     const semester = Array.isArray(semesterRaw)
       ? semesterRaw.map(String)
       : semesterRaw
-        ? [String(semesterRaw)]
-        : [];
+      ? [String(semesterRaw)]
+      : [];
     const section = Array.isArray(sectionRaw)
       ? sectionRaw.map(String)
       : sectionRaw
-        ? [String(sectionRaw)]
-        : [];
+      ? [String(sectionRaw)]
+      : [];
     const year = Array.isArray(yearRaw)
       ? yearRaw.map(String)
       : yearRaw
-        ? [String(yearRaw)]
-        : [];
+      ? [String(yearRaw)]
+      : [];
 
     if (!title || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: "Missing title or questions" });
@@ -296,13 +276,13 @@ router.post("/", requireAuth, requireAdmin, async (req, res, next) => {
       durationMinutes: Number.isFinite(req.body?.durationMinutes)
         ? req.body.durationMinutes
         : Number.isFinite(meta.durationMinutes)
-          ? meta.durationMinutes
-          : 30,
+        ? meta.durationMinutes
+        : 30,
       attemptsAllowed: Number.isFinite(req.body?.attemptsAllowed)
         ? req.body.attemptsAllowed
         : Number.isFinite(meta.attemptsAllowed)
-          ? meta.attemptsAllowed
-          : 1,
+        ? meta.attemptsAllowed
+        : 1,
       shuffleQuestions:
         typeof req.body?.shuffleQuestions === "boolean"
           ? req.body.shuffleQuestions
@@ -314,13 +294,13 @@ router.post("/", requireAuth, requireAdmin, async (req, res, next) => {
       startAt: req.body?.startAt
         ? new Date(req.body.startAt)
         : meta.startAt
-          ? new Date(meta.startAt)
-          : undefined,
+        ? new Date(meta.startAt)
+        : undefined,
       endAt: req.body?.endAt
         ? new Date(req.body.endAt)
         : meta.endAt
-          ? new Date(meta.endAt)
-          : undefined,
+        ? new Date(meta.endAt)
+        : undefined,
       createdBy: req.user._id,
       createdByModel: "Admin",
     });
@@ -624,18 +604,17 @@ router.post("/:id/submit", requireAuth, async (req, res, next) => {
   }
 });
 
-// attempts for a test (admin) with filters
+// attempts for a test (admin)
 router.get(
   "/:id/attempts",
   requireAuth,
   requireAdmin,
   async (req, res, next) => {
     try {
-      const testId = req.params.id;
-      const test = await Test.findById(testId).lean();
+      const test = await Test.findById(req.params.id).lean();
       if (!test) return res.status(404).json({ error: "Test not found" });
 
-      // Auth Logic
+      // Department check for admins
       const adminDept = req.user.dept || req.user.department;
       if (adminDept) {
         const departments =
@@ -651,291 +630,64 @@ router.get(
         }
       }
 
-      const {
-        page = 1,
-        limit = 50,
-        search,
-        dept,
-        year,
-        section,
-        status,
-        malpractice,
-        sortBy,
-      } = req.query;
+      const page = parseInt(req.query.page || "1", 10);
+      const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
+      const skip = (page - 1) * limit;
 
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-      const limitNum = parseInt(limit);
+      // Base query for attempts
+      const query = { test: req.params.id };
 
-      // Build Match Stages
-      const matchStage = { test: test._id };
-
-      // Status Filter
-      if (status) {
-        if (status === "pass") matchStage.score = { $gte: 70 }; // Assuming 70 is pass
-        if (status === "fail") matchStage.score = { $lt: 70 };
+      // Build student filter criteria
+      const studentFilter = {};
+      if (req.query.dept) studentFilter.dept = String(req.query.dept);
+      if (req.query.year) studentFilter.year = String(req.query.year);
+      if (req.query.section) studentFilter.section = String(req.query.section);
+      if (req.query.semester)
+        studentFilter.semester = String(req.query.semester);
+      if (req.query.search) {
+        const searchRegex = { $regex: req.query.search, $options: "i" };
+        studentFilter.$or = [
+          { name: searchRegex },
+          { email: searchRegex },
+          { enrollmentNumber: searchRegex },
+          { registerNumber: searchRegex },
+        ];
       }
 
-      // Malpractice Filter
-      if (malpractice) {
-        if (malpractice === "yes") matchStage.malpractice = true;
-        if (malpractice === "no") matchStage.malpractice = { $ne: true };
-      }
+      // If filters are provided, first get matching student IDs
+      let studentIds = null;
+      if (Object.keys(studentFilter).length > 0) {
+        const User = require("../models/User");
+        const matchingStudents = await User.find({
+          ...studentFilter,
+          role: "student",
+        })
+          .select("_id")
+          .lean();
+        studentIds = matchingStudents.map((s) => s._id);
 
-      const pipeline = [
-        { $match: { ...matchStage } },
-        {
-          $lookup: {
-            from: "users",
-            localField: "student",
-            foreignField: "_id",
-            as: "student",
-          },
-        },
-        { $unwind: "$student" },
-        // Student Filters
-        {
-          $match: {
-            ...(search
-              ? {
-                $or: [
-                  { "student.name": { $regex: search, $options: "i" } },
-                  { "student.enrollmentNumber": { $regex: search, $options: "i" } },
-                  { "student.registerNumber": { $regex: search, $options: "i" } },
-                ]
-              }
-              : {}),
-            ...(dept && dept !== "all"
-              ? {
-                "student.dept": {
-                  $regex: dept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-                  $options: "i",
-                },
-              }
-              : {}),
-            ...(year && year !== "all"
-              ? {
-                "student.year": {
-                  $regex: year.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-                  $options: "i",
-                },
-              }
-              : {}),
-            ...(section && section !== "all"
-              ? {
-                "student.section": {
-                  $regex: section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-                  $options: "i",
-                },
-              }
-              : {}),
-          },
-        },
-      ];
-
-      // Sorting
-      let sortStage = { submittedAt: -1 }; // default
-      if (sortBy) {
-        switch (sortBy) {
-          case "score-desc":
-            sortStage = { score: -1 };
-            break;
-          case "score-asc":
-            sortStage = { score: 1 };
-            break;
-          case "time-asc":
-            sortStage = { timeTaken: 1 };
-            break; // Need calculated time, but submittedAt diff is easier if stored.
-          // For accurate time sort, we might need a project stage or simpler fallback
-          case "time-desc":
-            sortStage = { submittedAt: -1 };
-            break;
-          case "name-asc":
-            sortStage = { "student.name": 1 };
-            break;
-          case "name-desc":
-            sortStage = { "student.name": -1 };
-            break;
-          case "dept-asc":
-            sortStage = { "student.dept": 1 };
-            break;
-          case "dept-desc":
-            sortStage = { "student.dept": -1 };
-            break;
-          case "year-asc":
-            sortStage = { "student.year": 1 };
-            break;
-          case "year-desc":
-            sortStage = { "student.year": -1 };
-            break;
-          case "section-asc":
-            sortStage = { "student.section": 1 };
-            break;
-          case "section-desc":
-            sortStage = { "student.section": -1 };
-            break;
-        }
-      }
-      pipeline.push({ $sort: sortStage });
-
-      // Pagination Facet
-      pipeline.push({
-        $facet: {
-          attempts: [{ $skip: skip }, { $limit: limitNum }],
-          total: [{ $count: "count" }],
-        },
-      });
-
-      const results = await Attempt.aggregate(pipeline);
-      const attempts = results[0].attempts;
-      const total = results[0].total[0] ? results[0].total[0].count : 0;
-
-      res.json({ attempts, total, page: parseInt(page), limit: limitNum });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-// students who have NOT attended a test
-router.get(
-  "/:id/not-attended",
-  requireAuth,
-  requireAdmin,
-  async (req, res, next) => {
-    try {
-      const testId = req.params.id;
-      const test = await Test.findById(testId).lean();
-      if (!test) return res.status(404).json({ error: "Test not found" });
-
-      // Auth Logic (Same as above)
-      const adminDept = req.user.dept || req.user.department;
-      if (adminDept) {
-        const departments =
-          test.assignedTo && Array.isArray(test.assignedTo.departments)
-            ? test.assignedTo.departments
-            : [];
-        const isCreator =
-          test.createdBy && String(test.createdBy) === String(req.user._id);
-        if (!isCreator && !departments.includes(adminDept)) {
-          return res
-            .status(403)
-            .json({ error: "Not authorized for this test" });
+        // Add student filter to attempts query
+        if (studentIds.length > 0) {
+          query.student = { $in: studentIds };
+        } else {
+          // No students match the filter, return empty result
+          return res.json({ attempts: [], total: 0, page, limit });
         }
       }
 
-      // 1. Get IDs of students who HAVE attended
-      const attendedStudentIds = await Attempt.find({ test: testId }).distinct(
-        "student"
-      );
-
-      // 2. Build Base Query
-      const query = {
-        _id: { $nin: attendedStudentIds },
-        role: "student",
-      };
-
-      // We will use an $and array to safely combine assignment constraints, search, and user filters
-      const filterConditions = [];
-
-      // Apply Test Assignment Constraints
-      if (test.assignedTo) {
-        if (test.assignedTo.departments && test.assignedTo.departments.length > 0) {
-          filterConditions.push({ dept: { $in: test.assignedTo.departments } });
-        }
-        if (test.assignedTo.year && test.assignedTo.year.length > 0) {
-          filterConditions.push({ year: { $in: test.assignedTo.year } });
-        }
-        if (test.assignedTo.section && test.assignedTo.section.length > 0) {
-          filterConditions.push({ section: { $in: test.assignedTo.section } });
-        }
-        if (test.assignedTo.semester && test.assignedTo.semester.length > 0) {
-          filterConditions.push({ semester: { $in: test.assignedTo.semester.map(String) } });
-        }
-      }
-
-      // 3. Apply Request Filters
-      const {
-        page = 1,
-        limit = 50,
-        search,
-        dept,
-        year,
-        section,
-        sortBy,
-      } = req.query;
-
-      if (search) {
-        filterConditions.push({
-          $or: [
-            { name: { $regex: search, $options: "i" } },
-            { enrollmentNumber: { $regex: search, $options: "i" } },
-            { registerNumber: { $regex: search, $options: "i" } },
-          ]
-        });
-      }
-
-      if (dept && dept !== "all") {
-        filterConditions.push({
-          dept: {
-            $regex: dept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-            $options: "i",
-          },
-        });
-      }
-
-      if (year && year !== "all") {
-        filterConditions.push({
-          year: {
-            $regex: year.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-            $options: "i",
-          },
-        });
-      }
-
-      if (section && section !== "all") {
-        filterConditions.push({
-          section: {
-            $regex: section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-            $options: "i",
-          },
-        });
-      }
-
-      if (filterConditions.length > 0) {
-        query.$and = filterConditions;
-      }
-
-      // 4. Sort
-      let sort = { name: 1 };
-      if (sortBy) {
-        if (sortBy === "name-desc") sort = { name: -1 };
-        if (sortBy === "dept-asc") sort = { dept: 1 };
-        if (sortBy === "dept-desc") sort = { dept: -1 };
-        if (sortBy === "year-asc") sort = { year: 1 };
-        if (sortBy === "year-desc") sort = { year: -1 };
-        if (sortBy === "section-asc") sort = { section: 1 };
-        if (sortBy === "section-desc") sort = { section: -1 };
-      }
-
-      const skip = (parseInt(page) - 1) * parseInt(limit);
-
-      // 5. Execute
-      const [students, total] = await Promise.all([
-        User.find(query)
-          .select("name email dept year section semester enrollmentNumber")
-          .sort(sort)
+      const [items, total] = await Promise.all([
+        Attempt.find(query)
+          .populate(
+            "student",
+            "name email dept year section semester enrollmentNumber"
+          )
+          .sort({ startedAt: -1 })
           .skip(skip)
-          .limit(parseInt(limit))
+          .limit(limit)
           .lean(),
-        User.countDocuments(query),
+        Attempt.countDocuments(query),
       ]);
-
-      res.json({
-        students,
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-      });
+      res.json({ attempts: items, total, page, limit });
     } catch (err) {
       next(err);
     }

@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const AnswerSchema = new mongoose.Schema({
   questionId: { type: mongoose.Schema.Types.Mixed },
@@ -6,12 +6,8 @@ const AnswerSchema = new mongoose.Schema({
 });
 
 const AttemptSchema = new mongoose.Schema({
-  test: { type: mongoose.Schema.Types.ObjectId, ref: "Test", required: true },
-  student: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-  },
+  test: { type: mongoose.Schema.Types.ObjectId, ref: 'Test', required: true },
+  student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   attemptId: { type: String, required: true, index: true },
   // Optional client-side identifier to dedupe offline uploads
   clientId: { type: String, index: true, sparse: true },
@@ -29,9 +25,4 @@ const AttemptSchema = new mongoose.Schema({
   submittedAt: { type: Date },
 });
 
-// Indexes to keep admin analytics endpoints fast
-AttemptSchema.index({ test: 1, submittedAt: -1 });
-AttemptSchema.index({ test: 1, student: 1 });
-AttemptSchema.index({ student: 1, submittedAt: -1 });
-
-module.exports = mongoose.model("Attempt", AttemptSchema);
+module.exports = mongoose.model('Attempt', AttemptSchema);

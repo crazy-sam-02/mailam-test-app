@@ -108,23 +108,4 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
   }
-
-  html,
-  body {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: hidden;
-  }
-
-  img,
-  video,
-  canvas,
-  svg {
-    max-width: 100%;
-    height: auto;
-  }
-
-  table {
-    max-width: 100%;
-  }
 }

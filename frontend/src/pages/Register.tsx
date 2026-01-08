@@ -199,9 +199,7 @@ const Register = () => {
                     </SelectTrigger>
                     <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
                       {[1, 2, 3, 4].map(yr => (
-                        <SelectItem key={yr} value={String(yr)}>
-                          {yr}{yr === 1 ? 'st' : yr === 2 ? 'nd' : yr === 3 ? 'rd' : 'th'} Year
-                        </SelectItem>
+                        <SelectItem key={yr} value={String(yr)}>{yr}st Year</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -217,7 +215,7 @@ const Register = () => {
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent className="backdrop-blur-xl bg-card/95 border-white/20">
-                      {['A', 'B', 'C', 'D'].map(sec => (
+                      {['A', 'B', 'C'].map(sec => (
                         <SelectItem key={sec} value={sec}>Sec {sec}</SelectItem>
                       ))}
                     </SelectContent>

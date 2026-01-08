@@ -1,10 +1,13 @@
 import type { User, Test, Attempt, Answer } from '@/types';
 
-// Prefer explicit env, otherwise use same-origin '/api' (works with Vite proxy / deployments).
-let API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api';
+const HOST = (typeof window !== 'undefined' && (window as any).location?.hostname) ? (window as any).location.hostname : 'localhost';
+// Temporary: Force production URL to override incompatible local .env variables
+let API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api';
+//https://mailam-test-app.onrender.com/api
 
-// If env provides full origin without '/api', normalize it.
-if (API_BASE !== '/api' && !API_BASE.endsWith('/api')) {
+// Ensure API_BASE ends with /api if it doesn't already
+if (!API_BASE.endsWith('/api')) {
+  // Remove trailing slash if present before appending /api
   API_BASE = API_BASE.replace(/\/$/, '') + '/api';
 }
 
@@ -21,56 +24,21 @@ export function getToken(): string | null {
 }
 
 async function request(path: string, opts: RequestInit = {}) {
-  const method = (opts.method || 'GET').toUpperCase();
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(opts.headers as Record<string, string> || {}) };
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  // Basic in-memory cache for GET requests (helps before query migration completes)
-  // Note: react-query will supersede most of this.
-  const cacheKey = `${method}:${API_BASE}${path}`;
-  const canCache = method === 'GET' && !opts.body;
-  const now = Date.now();
-
-  if (canCache) {
-    const hit = getCache.get(cacheKey);
-    if (hit && hit.expiresAt > now) return hit.value;
-  }
-
-  const controller = new AbortController();
-  const timeoutMs = typeof (opts as any).timeoutMs === 'number' ? (opts as any).timeoutMs : 20_000;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'omit', headers, signal: (opts as any).signal || controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  const contentType = res.headers.get('content-type') || '';
-  let body: any = null;
-  try {
-    if (contentType.includes('application/json')) body = await res.json();
-    else body = await res.text();
-  } catch (e) {
-    body = null;
-  }
+  const res = await fetch(`${API_BASE}${path}`, { ...opts, credentials: 'omit', headers });
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch (e) { body = text; }
   if (!res.ok) {
     const err = new Error(body?.error || res.statusText || 'Request failed');
     (err as Record<string, any>).status = res.status;
     (err as Record<string, any>).body = body;
     throw err;
   }
-
-  if (canCache) {
-    // Cache for a short period; do not cache auth-sensitive mutations.
-    getCache.set(cacheKey, { value: body, expiresAt: now + 5_000 });
-  }
   return body;
 }
-
-const getCache = new Map<string, { value: any; expiresAt: number }>();
 
 // Auth
 export async function apiLogin(email: string, password: string) {
@@ -93,11 +61,12 @@ export async function apiLogout() {
   return request('/auth/logout', { method: 'POST' });
 }
 
-export async function apiGetStudents(params: { semester?: string; dept?: string; section?: string; page?: number; limit?: number; } = {}) {
+export async function apiGetStudents(params: { semester?: string; dept?: string; section?: string; year?: string; page?: number; limit?: number; } = {}) {
   const query = new URLSearchParams();
-  if (params.semester) query.set('semester', params.semester);
-  if (params.dept) query.set('dept', params.dept);
-  if (params.section) query.set('section', params.section);
+  if (params.semester && params.semester !== 'ALL') query.set('semester', params.semester);
+  if (params.dept && params.dept !== 'ALL') query.set('dept', params.dept);
+  if (params.section && params.section !== 'ALL') query.set('section', params.section);
+  if (params.year && params.year !== 'ALL') query.set('year', params.year);
   if (params.page) query.set('page', String(params.page));
   if (params.limit) query.set('limit', String(params.limit));
   return request(`/auth/students?${query.toString()}`, { method: 'GET' });
@@ -108,8 +77,15 @@ export async function apiGetStudent(studentId: string) {
 }
 
 // Tests
-export async function apiGetTests() {
-  return request('/tests', { method: 'GET' });
+export async function apiGetTests(params: { semester?: string; dept?: string; section?: string; year?: string; page?: number; limit?: number; } = {}) {
+  const query = new URLSearchParams();
+  if (params.semester && params.semester !== 'ALL') query.set('semester', params.semester);
+  if (params.dept && params.dept !== 'ALL') query.set('dept', params.dept);
+  if (params.section && params.section !== 'ALL') query.set('section', params.section);
+  if (params.year && params.year !== 'ALL') query.set('year', params.year);
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  return request(`/tests?${query.toString()}`, { method: 'GET' });
 }
 
 export async function apiGetTest(testId: string) {
@@ -150,29 +126,16 @@ export async function apiGetMyAttempts() {
   return request('/attempts/my', { method: 'GET' });
 }
 
-export async function apiGetAttemptsForTest(testId: string, params: Record<string, any> = {}) {
+export async function apiGetAttemptsForTest(testId: string, page = 1, limit = 50, filters?: { dept?: string; year?: string; section?: string; semester?: string; search?: string }) {
   const query = new URLSearchParams();
-  // Add all params to query
-  Object.keys(params).forEach(key => {
-    if (params[key] !== undefined && params[key] !== null) {
-      query.set(key, String(params[key]));
-    }
-  });
-  if (!query.has('page')) query.set('page', '1');
-  if (!query.has('limit')) query.set('limit', '50');
+  query.set('page', String(page));
+  query.set('limit', String(limit));
+  if (filters?.dept && filters.dept !== 'ALL') query.set('dept', filters.dept);
+  if (filters?.year && filters.year !== 'ALL') query.set('year', filters.year);
+  if (filters?.section && filters.section !== 'ALL') query.set('section', filters.section);
+  if (filters?.semester && filters.semester !== 'ALL') query.set('semester', filters.semester);
+  if (filters?.search) query.set('search', filters.search);
   return request(`/tests/${testId}/attempts?${query.toString()}`, { method: 'GET' });
-}
-
-export async function apiGetNotAttendedForTest(testId: string, params: Record<string, any> = {}) {
-  const query = new URLSearchParams();
-  Object.keys(params).forEach(key => {
-    if (params[key] !== undefined && params[key] !== null) {
-      query.set(key, String(params[key]));
-    }
-  });
-  if (!query.has('page')) query.set('page', '1');
-  if (!query.has('limit')) query.set('limit', '50');
-  return request(`/tests/${testId}/not-attended?${query.toString()}`, { method: 'GET' });
 }
 
 // Admin: delete a test

@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Question, Test } from '@/types';
 import { toast } from 'sonner';
 import { Plus, Trash2, Upload, FileJson, FileText, Pencil, Check } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -32,8 +31,6 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
     semester: [user?.semester || '1'],
     department: [user?.dept || 'CSE'],
     section: ['A'], // Default section
-    shuffleQuestions: true,
-    shuffleOptions: true,
   });
   const [questions, setQuestions] = useState<Omit<Question, 'id' | 'createdBy' | 'createdAt'>[]>([
     { text: '', options: ['', '', '', ''], correctOptionIndex: 0 },
@@ -293,8 +290,6 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
           meta: {
             durationMinutes: testData.durationMinutes,
             attemptsAllowed: testData.attemptsAllowed,
-            shuffleQuestions: testData.shuffleQuestions,
-            shuffleOptions: testData.shuffleOptions,
             assignedTo: {
               semester: testData.semester,
               department: testData.department,
@@ -326,8 +321,6 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
       semester: [user?.semester || '1'],
       department: [user?.dept || 'CSE'],
       section: ['A'], // Default
-      shuffleQuestions: true,
-      shuffleOptions: true,
     });
     setQuestions([{ text: '', options: ['', '', '', ''], correctOptionIndex: 0 }]);
     setJsonInput('');
@@ -398,52 +391,25 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="duration">Duration (minutes)</Label>
-                    <Input
-                      id="duration"
-                      type="number"
-                      value={testData.durationMinutes}
-                      onChange={(e) => setTestData({ ...testData, durationMinutes: parseInt(e.target.value) })}
-                      className="backdrop-blur-sm bg-white/5 border-white/20"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between space-x-2 border p-3 rounded-lg backdrop-blur-sm bg-white/5 border-white/20">
-                    <Label htmlFor="shuffle-q" className="flex flex-col space-y-1">
-                      <span>Shuffle Questions</span>
-                      <span className="font-normal text-xs text-muted-foreground">Randomize question order</span>
-                    </Label>
-                    <Switch
-                      id="shuffle-q"
-                      checked={testData.shuffleQuestions}
-                      onCheckedChange={(c) => setTestData({ ...testData, shuffleQuestions: c })}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="duration">Duration (minutes)</Label>
+                  <Input
+                    id="duration"
+                    type="number"
+                    value={testData.durationMinutes}
+                    onChange={(e) => setTestData({ ...testData, durationMinutes: parseInt(e.target.value) })}
+                    className="backdrop-blur-sm bg-white/5 border-white/20"
+                  />
                 </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="attempts">Attempts Allowed</Label>
-                    <Input
-                      id="attempts"
-                      type="number"
-                      value={testData.attemptsAllowed}
-                      onChange={(e) => setTestData({ ...testData, attemptsAllowed: parseInt(e.target.value) })}
-                      className="backdrop-blur-sm bg-white/5 border-white/20"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between space-x-2 border p-3 rounded-lg backdrop-blur-sm bg-white/5 border-white/20">
-                    <Label htmlFor="shuffle-o" className="flex flex-col space-y-1">
-                      <span>Shuffle Options</span>
-                      <span className="font-normal text-xs text-muted-foreground">Randomize answer choices</span>
-                    </Label>
-                    <Switch
-                      id="shuffle-o"
-                      checked={testData.shuffleOptions}
-                      onCheckedChange={(c) => setTestData({ ...testData, shuffleOptions: c })}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="attempts">Attempts Allowed</Label>
+                  <Input
+                    id="attempts"
+                    type="number"
+                    value={testData.attemptsAllowed}
+                    onChange={(e) => setTestData({ ...testData, attemptsAllowed: parseInt(e.target.value) })}
+                    className="backdrop-blur-sm bg-white/5 border-white/20"
+                  />
                 </div>
               </div>
             </div>
@@ -451,7 +417,7 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
             <div className="space-y-3">
               <Label>Question Creation Mode</Label>
               <Tabs value={creationMode} onValueChange={(v) => setCreationMode(v as any)}>
-                <TabsList className="grid w-full grid-cols-2 backdrop-blur-sm bg-white/5">
+                <TabsList className="grid w-full grid-cols-3 backdrop-blur-sm bg-white/5">
                   <TabsTrigger value="manual" className="flex items-center gap-2">
                     <Pencil className="w-4 h-4" />
                     Manual
@@ -459,6 +425,10 @@ const CreateQuizDialog = ({ open, onOpenChange, onSuccess }: CreateQuizDialogPro
                   <TabsTrigger value="json" className="flex items-center gap-2">
                     <FileJson className="w-4 h-4" />
                     JSON Upload
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="flex items-center gap-2">
+                    <Upload className="w-4 h-4" />
+                    File Upload
                   </TabsTrigger>
                 </TabsList>
 

@@ -76,6 +76,7 @@ router.get('/students', requireAuth, requireAdmin, async (req, res, next) => {
     if (semester) query.semester = String(semester);
     if (dept) query.dept = String(dept);
     if (section) query.section = String(section);
+    if (req.query.year) query.year = String(req.query.year);
     const pageN = Math.max(parseInt(String(page), 10) || 1, 1);
     const limitN = Math.min(Math.max(parseInt(String(limit), 10) || 100, 1), 500);
     const skip = (pageN - 1) * limitN;

@@ -28,15 +28,6 @@ import '@tensorflow/tfjs-backend-cpu';
 
 const STORAGE_KEY_PREFIX = 'scholar_shield_attempt_';
 
-function shuffleArray<T>(array: T[]): T[] {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-}
-
 const TakeTest = () => {
   const { testId } = useParams();
   const { user } = useAuth();
@@ -44,7 +35,7 @@ const TakeTest = () => {
 
   // State
   const [test, setTest] = useState<Test | null>(null);
-  const [questions, setQuestions] = useState<Array<{ id: string; text: string; options: Array<{ text: string; originalIndex: number }> }>>([]);
+  const [questions, setQuestions] = useState<Array<{ id: string; text: string; options: string[] }>>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({}); // Map questionId -> optionIndex
   const [suspiciousEvents, setSuspiciousEvents] = useState<SuspiciousEvent[]>([]);
@@ -58,7 +49,6 @@ const TakeTest = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [objectDetector, setObjectDetector] = useState<cocoSsd.ObjectDetection | null>(null);
-  const [modelLoadError, setModelLoadError] = useState(false);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -109,40 +99,16 @@ const TakeTest = () => {
         const t = res?.test;
         if (!t) throw new Error('Test not found');
 
-        // Check for saved question state to maintain shuffle consistency
-        const questionsStorageKey = `${STORAGE_KEY_PREFIX}questions_${testId}_${user.id}`;
-        const savedQuestionsState = localStorage.getItem(questionsStorageKey);
-
-        let processedQuestions: Array<{ id: string; text: string; options: Array<{ text: string; originalIndex: number }> }>;
-
-        if (savedQuestionsState) {
-          processedQuestions = JSON.parse(savedQuestionsState);
-        } else {
-          // Process and shuffle
-          const rawQuestions = Array.isArray(t.questions) ? t.questions : [];
-          let mapped = rawQuestions.map((q: any) => {
-            // Create options with original index
-            let opts = (q.options || []).map((o: string, i: number) => ({ text: String(o), originalIndex: i }));
-            if (t.shuffleOptions) {
-              opts = shuffleArray(opts);
-            }
-            return {
-              id: String(q.id || q._id || ''),
-              text: String(q.text || ''),
-              options: opts
-            };
-          });
-
-          if (t.shuffleQuestions) {
-            mapped = shuffleArray(mapped);
-          }
-          processedQuestions = mapped;
-          // Save immediately so it persists across reloads
-          localStorage.setItem(questionsStorageKey, JSON.stringify(processedQuestions));
-        }
+        const qs = Array.isArray(t.questions)
+          ? t.questions.map((q: any) => ({
+            id: String(q.id || q._id || ''),
+            text: String(q.text || ''),
+            options: (q.options || []).map(String)
+          }))
+          : [];
 
         setTest(t);
-        setQuestions(processedQuestions);
+        setQuestions(qs);
 
         // 2. Restore or Start Attempt
         const storageKey = `${STORAGE_KEY_PREFIX}${testId}_${user.id}`;
@@ -394,7 +360,6 @@ const TakeTest = () => {
         toast.success('Proctoring AI Loaded');
       } catch (err) {
         console.error('Failed to load AI models', err);
-        setModelLoadError(true);
         toast.error('Failed to load proctoring models. Please refresh.');
       }
     };
@@ -526,33 +491,12 @@ const TakeTest = () => {
     }
   };
 
-  if (!test || questions.length === 0 || (!modelsLoaded && !modelLoadError)) {
+  if (!test || questions.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
-          <p className="text-muted-foreground">
-            {test ? 'Loading AI Proctoring Models...' : 'Loading test environment...'}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (modelLoadError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4 max-w-md px-4">
-          <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-          <h2 className="text-lg font-semibold">Proctoring Initialization Failed</h2>
-          <p className="text-sm text-muted-foreground">
-            We could not load the necessary AI proctoring models. Please check your internet connection and try again.
-          </p>
-          <Button onClick={() => window.location.reload()} variant="default">
-            Retry
-          </Button>
+          <p className="text-muted-foreground">Loading test environment...</p>
         </div>
       </div>
     );
@@ -665,11 +609,11 @@ const TakeTest = () => {
             </CardHeader>
             <CardContent className="grid gap-3">
               {currentQ.options.map((opt, idx) => {
-                const isSelected = answers[currentQ.id] === opt.originalIndex;
+                const isSelected = answers[currentQ.id] === idx;
                 return (
                   <div
                     key={idx}
-                    onClick={() => handleAnswer(opt.originalIndex)}
+                    onClick={() => handleAnswer(idx)}
                     className={`
                       relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-200
                       ${isSelected
@@ -685,7 +629,7 @@ const TakeTest = () => {
                       `}>
                         {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
                       </div>
-                      <span className="text-base">{opt.text}</span>
+                      <span className="text-base">{opt}</span>
                     </div>
                   </div>
                 );

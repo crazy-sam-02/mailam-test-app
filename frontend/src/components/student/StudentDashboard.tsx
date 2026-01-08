@@ -1,100 +1,120 @@
-import { useMemo, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LogOut, Clock, FileText, CheckCircle, Sparkles, TrendingUp, User } from 'lucide-react';
 import { Test, Attempt } from '@/types';
 import { formatDurationMs } from '@/lib/utils';
-import { useMyAttemptsQuery, useTestsQuery } from '@/hooks/useApiQueries';
+import { apiGetTests, apiGetMyAttempts } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { useNavigate } from 'react-router-dom';
 
 const StudentDashboard = () => {
   const { user, logout } = useAuth();
+  const [availableTests, setAvailableTests] = useState<Test[]>([]);
+  const [myAttempts, setMyAttempts] = useState<Attempt[]>([]);
   // Map of testId to total possible points
   const [testPoints, setTestPoints] = useState<Record<string, number>>({});
   const navigate = useNavigate();
 
-  const testsQuery = useTestsQuery();
-  const attemptsQuery = useMyAttemptsQuery(!!user);
+  const loadTests = useCallback(async () => {
+    // fallback sources
+    const loadLocal = () => {
+      // Strictly avoid localStorage: clear lists and show message if offline
+      setAvailableTests([]);
+      setMyAttempts([]);
+    };
 
-  const availableTests: Test[] = useMemo(() => {
-    const serverTests = Array.isArray((testsQuery.data as any)?.tests) ? (testsQuery.data as any).tests : [];
-    const mapped: Test[] = serverTests.map((t: Record<string, any>) => {
-      const id = String(t._id || t.id);
-      const title = String(t.title || 'Untitled');
-      const description = String(t.description || '');
-      const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
-      const assigned = t.assignedTo || {};
+    try {
+      const resp = await apiGetTests();
+      const serverTests = Array.isArray(resp?.tests) ? resp.tests : [];
+      const mapped: Test[] = serverTests.map((t: Record<string, any>) => {
+        const id = String(t._id || t.id);
+        const title = String(t.title || 'Untitled');
+        const description = String(t.description || '');
+        const questionsCount = Array.isArray(t.questions) ? t.questions.length : 0;
+        const assigned = t.assignedTo || {};
 
-      let semester: string[] = [];
-      const rawSem = assigned.semester || assigned.sem;
-      if (Array.isArray(rawSem)) semester = rawSem.map(String);
-      else if (rawSem) semester = [String(rawSem)];
+        // Handle semester as array
+        let semester: string[] = [];
+        const rawSem = assigned.semester || assigned.sem;
+        if (Array.isArray(rawSem)) {
+          semester = rawSem.map(String);
+        } else if (rawSem) {
+          semester = [String(rawSem)];
+        }
 
-      const depts = assigned.departments || assigned.department || assigned.dept;
-      const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
-      const durationMinutes = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
-      const attemptsAllowed = Number.isFinite(t.attemptsAllowed) ? t.attemptsAllowed : 1;
-      const shuffleQuestions = !!t.shuffleQuestions;
-      const shuffleOptions = !!t.shuffleOptions;
-      const startAt = t.startAt ? String(t.startAt) : new Date().toISOString();
-      const endAt = t.endAt ? String(t.endAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      const createdBy = typeof t.createdBy === 'object' && t.createdBy?._id ? String(t.createdBy._id) : String(t.createdBy || '');
-      const createdByName = t.createdByName || '';
-      return {
-        id,
-        title,
-        description,
-        assignedTo: { semester, departments },
-        questions: Array.from({ length: questionsCount }, (_, i) => `${id}-q${i}`),
-        durationMinutes,
-        attemptsAllowed,
-        shuffleQuestions,
-        shuffleOptions,
-        startAt,
-        endAt,
-        createdBy,
-        createdByName,
-      } as Test;
-    });
+        const depts = assigned.departments || assigned.department || assigned.dept;
+        const departments = Array.isArray(depts) ? depts.map(String) : (depts ? [String(depts)] : []);
+        const durationMinutes = Number.isFinite(t.durationMinutes) ? t.durationMinutes : 30;
+        const attemptsAllowed = Number.isFinite(t.attemptsAllowed) ? t.attemptsAllowed : 1;
+        const shuffleQuestions = !!t.shuffleQuestions;
+        const shuffleOptions = !!t.shuffleOptions;
+        const startAt = t.startAt ? String(t.startAt) : new Date().toISOString();
+        const endAt = t.endAt ? String(t.endAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const createdBy = typeof t.createdBy === 'object' && t.createdBy?._id ? String(t.createdBy._id) : String(t.createdBy || '');
+        const createdByName = t.createdByName || '';
+        return {
+          id,
+          title,
+          description,
+          assignedTo: { semester, departments },
+          questions: Array.from({ length: questionsCount }, (_, i) => `${id}-q${i}`),
+          durationMinutes,
+          attemptsAllowed,
+          shuffleQuestions,
+          shuffleOptions,
+          startAt,
+          endAt,
+          createdBy,
+          createdByName,
+        } as Test;
+      });
+      const filtered = mapped.filter((t) => {
+        const userSem = String(user?.semester || '');
+        const semMatches = t.assignedTo.semester.length === 0 || t.assignedTo.semester.includes(userSem);
 
-    const userSem = String((user as any)?.semester || (user as any)?.sem || '');
-    const userDept = String((user as any)?.dept || (user as any)?.department || (user as any)?.branch || '').trim();
+        const userDept = String(user?.dept || 'undefined');
+        // Check case-insensitive match for departments
+        const deptMatches = t.assignedTo.departments.length === 0 ||
+          t.assignedTo.departments.some(d => d.toLowerCase() === userDept.toLowerCase());
 
-    return mapped.filter((t) => {
-      const semMatches = t.assignedTo.semester.length === 0 || t.assignedTo.semester.includes(userSem);
-      // If user's department is missing, don't client-filter by dept (server already filters).
-      const deptMatches =
-        !userDept ||
-        t.assignedTo.departments.length === 0 ||
-        t.assignedTo.departments.some((d) => d.trim().toLowerCase() === userDept.toLowerCase());
-      return semMatches && deptMatches;
-    });
-  }, [testsQuery.data, (user as any)?.semester, (user as any)?.sem, (user as any)?.dept, (user as any)?.department, (user as any)?.branch]);
+        return semMatches && deptMatches;
+      });
+      setAvailableTests(filtered);
 
-  const myAttempts: Attempt[] = useMemo(() => {
-    const serverAttempts = Array.isArray((attemptsQuery.data as any)?.attempts) ? (attemptsQuery.data as any).attempts : [];
-    return serverAttempts.map((a: Record<string, any>) => ({
-      id: String(a._id || a.attemptId || crypto.randomUUID()),
-      testId: String(a.test?._id || a.test || ''),
-      testTitle: a.test?.title || 'Unknown Test',
-      studentId: String((a.student && a.student._id) || a.student || (user?.id || '')),
-      answers: Array.isArray(a.answers)
-        ? a.answers.map((x: Record<string, any>) => ({
-          questionId: String(x.questionId || ''),
-          selectedOption: Number(x.answer ?? x.selectedOption ?? -1),
-          timeTakenSec: Number(x.timeTakenSec || 0)
-        }))
-        : [],
-      score: Number(a.score || 0),
-      startedAt: String(a.startedAt || ''),
-      finishedAt: String(a.submittedAt || a.finishedAt || ''),
-      suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
-      totalQuestions: a.totalQuestions ? Number(a.totalQuestions) : undefined,
-      percentage: a.percentage ? Number(a.percentage) : undefined,
-    }));
-  }, [attemptsQuery.data, user?.id]);
+      // fetch my attempts from backend
+      try {
+        const respA = await apiGetMyAttempts();
+        const serverAttempts = Array.isArray(respA?.attempts) ? respA.attempts : [];
+        const mappedA: Attempt[] = serverAttempts.map((a: Record<string, any>) => ({
+          id: String(a._id || a.attemptId || crypto.randomUUID()),
+          testId: String(a.test?._id || a.test || ''),
+          testTitle: a.test?.title || 'Unknown Test',
+          studentId: String((a.student && a.student._id) || a.student || (user?.id || '')),
+          answers: Array.isArray(a.answers) ? a.answers.map((x: Record<string, any>) => ({ questionId: String(x.questionId || ''), selectedOption: Number(x.answer ?? x.selectedOption ?? -1), timeTakenSec: Number(x.timeTakenSec || 0) })) : [],
+          score: Number(a.score || 0),
+          startedAt: String(a.startedAt || ''),
+          finishedAt: String(a.submittedAt || a.finishedAt || ''),
+          suspiciousEvents: Array.isArray(a.suspiciousEvents) ? a.suspiciousEvents : [],
+          totalQuestions: a.totalQuestions ? Number(a.totalQuestions) : undefined,
+          percentage: a.percentage ? Number(a.percentage) : undefined,
+        }));
+        setMyAttempts(mappedA);
+      } catch (err) {
+        // Failed to load attempts from server — do not use localStorage fallback per project policy
+        console.warn('Failed to load attempts from server', err);
+        setMyAttempts([]);
+      }
+    } catch (e) {
+      console.error('Failed to load tests/attempts from server', e);
+      loadLocal();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadTests();
+  }, [loadTests]);
 
   const getAttemptCount = (testId: string) => {
     return myAttempts.filter(a => a.testId === testId).length;
@@ -197,19 +217,7 @@ const StudentDashboard = () => {
             <h2 className="text-2xl font-semibold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
               Available Tests
             </h2>
-            {testsQuery.isLoading ? (
-              <Card className="backdrop-blur-xl bg-white/5 border-white/10">
-                <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
-                  Loading tests...
-                </CardContent>
-              </Card>
-            ) : testsQuery.isError ? (
-              <Card className="backdrop-blur-xl bg-white/5 border-white/10">
-                <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
-                  Failed to load tests.
-                </CardContent>
-              </Card>
-            ) : availableTests.length === 0 ? (
+            {availableTests.length === 0 ? (
               <Card className="backdrop-blur-xl bg-white/5 border-white/10">
                 <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
                   No tests available at the moment.

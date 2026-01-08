@@ -1,22 +1,15 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { User } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { apiGetStudent } from '@/lib/api';
+import { apiGetStudents, apiGetStudent } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { convertToCSV, downloadCSV } from '@/lib/csvUtils';
-import { Download } from 'lucide-react';
-import { toast } from 'sonner';
 
-interface StudentListProps {
-  students: User[];
-}
-
-const StudentList = ({ students }: StudentListProps) => {
+const StudentList = () => {
+  const [students, setStudents] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<User | null>(null);
@@ -27,86 +20,46 @@ const StudentList = ({ students }: StudentListProps) => {
   const [yearFilter, setYearFilter] = useState('ALL');
   const [sectionFilter, setSectionFilter] = useState('ALL');
 
-  // Derive unique options for filters, merging with standards
-  const departments = useMemo(() => {
-    const existing = new Set(students.map(s => s.dept || 'Unknown'));
-    const standard = ['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS', 'MBA', 'MCA'];
-    standard.forEach(d => existing.add(d));
-    existing.delete('Unknown'); // Remove 'Unknown' if valid opts exist
-    if (existing.size === 0) existing.add('Unknown');
-    return Array.from(existing).sort();
-  }, [students]);
+  // Fetch from backend
+  useEffect(() => {
+    const fetchStudents = async () => {
+      setLoading(true);
+      try {
+        const resp = await apiGetStudents({
+          dept: deptFilter,
+          year: yearFilter,
+          section: sectionFilter,
+          limit: 1000 // reasonable limit
+        });
+        setStudents(resp.students || []);
+      } catch (e) {
+        console.error("Failed to fetch students", e);
+        setStudents([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStudents();
+  }, [deptFilter, yearFilter, sectionFilter]);
 
-  const years = useMemo(() => {
-    const existing = new Set(students.map(s => s.year || 'Unknown'));
-    const standard = ['1', '2', '3', '4'];
-    standard.forEach(y => existing.add(y));
-    existing.delete('Unknown');
-    if (existing.size === 0) existing.add('Unknown');
-    return Array.from(existing).sort();
-  }, [students]);
+  // Standard options (could be dynamic, but static for now is fine)
+  const departments = ['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AI&DS', 'MBA', 'MCA'];
+  const years = ['1', '2', '3', '4'];
+  const sections = ['A', 'B', 'C', 'D'];
 
-  const sections = useMemo(() => {
-    const existing = new Set(students.map(s => s.section || 'Unknown'));
-    const standard = ['A', 'B', 'C', 'D'];
-    standard.forEach(s => existing.add(s));
-    existing.delete('Unknown');
-    if (existing.size === 0) existing.add('Unknown');
-    return Array.from(existing).sort();
-  }, [students]);
-
-  // Filter Logic
-  const filteredStudents = useMemo(() => {
-    return students.filter(student => {
-      // 1. Search (Name or Enrollment)
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = student.name.toLowerCase().includes(searchLower) ||
-        (student.enrollmentNumber || '').toLowerCase().includes(searchLower) ||
-        (student.registerNumber || '').toLowerCase().includes(searchLower);
-
-      // 2. Department Filter
-      const matchesDept = deptFilter === 'ALL' || student.dept === deptFilter;
-
-      // 3. Year Filter
-      const matchesYear = yearFilter === 'ALL' || student.year === yearFilter;
-
-      // 4. Section Filter
-      const matchesSection = sectionFilter === 'ALL' || student.section === sectionFilter;
-
-      return matchesSearch && matchesDept && matchesYear && matchesSection;
-    });
-  }, [students, searchTerm, deptFilter, yearFilter, sectionFilter]);
-
-  const handleExport = () => {
-    if (filteredStudents.length === 0) {
-      toast.error('No students to export');
-      return;
-    }
-    const data = filteredStudents.map(s => ({
-      Name: s.name,
-      Email: s.email,
-      Department: s.dept || '',
-      Year: s.year || '',
-      Section: s.section || '',
-      Semester: s.semester || '',
-      EnrollmentNumber: s.enrollmentNumber || '',
-      RegisterNumber: s.registerNumber || ''
-    }));
-    const csv = convertToCSV(data);
-    downloadCSV(csv, 'students_list.csv');
-  };
+  // Client-side search on the fetched results
+  const filteredStudents = students.filter(student => {
+    const searchLower = searchTerm.toLowerCase();
+    return student.name.toLowerCase().includes(searchLower) ||
+      (student.enrollmentNumber || '').toLowerCase().includes(searchLower) ||
+      (student.registerNumber || '').toLowerCase().includes(searchLower);
+  });
 
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle>Students Directory</CardTitle>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredStudents.length === 0}>
-              <Download className="w-4 h-4 mr-2" />
-              Export CSV
-            </Button>
-          </div>
         </CardHeader>
         <CardContent>
           {/* Search and Filters Bar */}
@@ -174,7 +127,11 @@ const StudentList = ({ students }: StudentListProps) => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredStudents.length === 0 ? (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell>
+                  </TableRow>
+                ) : filteredStudents.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="h-24 text-center">
                       No students found matching filters.
@@ -236,7 +193,7 @@ const StudentList = ({ students }: StudentListProps) => {
           <DialogHeader>
             <DialogTitle>Student Details</DialogTitle>
             <DialogDescription>
-              {loading ? 'Loading...' : ''}
+              Details fetched from database
             </DialogDescription>
           </DialogHeader>
           <Card>
