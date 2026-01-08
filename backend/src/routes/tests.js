@@ -90,28 +90,38 @@ router.get("/", requireAuth, async (req, res, next) => {
     }
     const dept = String(deptRaw).trim();
     const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Support legacy shapes (assignedTo.department or assignedTo.dept) and be case-insensitive
+    // Support legacy shapes (assignedTo.department or assignedTo.dept) and be case-insensitive / whitespace-tolerant
+    const regexPattern = `^\\s*${escapeRegex(dept)}\\s*$`;
     const query = {
       $or: [
         {
           "assignedTo.departments": {
-            $in: [dept, dept.toUpperCase(), dept.toLowerCase()],
+            $regex: regexPattern,
+            $options: "i",
           },
         },
         {
           "assignedTo.department": {
-            $regex: `^${escapeRegex(dept)}$`,
+            $regex: regexPattern,
             $options: "i",
           },
         },
         {
           "assignedTo.dept": {
-            $regex: `^${escapeRegex(dept)}$`,
+            $regex: regexPattern,
             $options: "i",
           },
         },
       ],
     };
+
+    console.log('[DEBUG] Student Test Fetch:', {
+      user: req.user.email,
+      deptRaw: deptRaw,
+      regex: regexPattern,
+      query: JSON.stringify(query)
+    });
+
     const [tests, total] = await Promise.all([
       Test.find(query)
         .select("-questions.correctAnswer")
@@ -824,22 +834,22 @@ router.get(
         role: "student",
       };
 
-      // We will use an $and array to safely combine assignment constraints and user filters
-      const andConditions = [];
+      // We will use an $and array to safely combine assignment constraints, search, and user filters
+      const filterConditions = [];
 
       // Apply Test Assignment Constraints
       if (test.assignedTo) {
         if (test.assignedTo.departments && test.assignedTo.departments.length > 0) {
-          andConditions.push({ dept: { $in: test.assignedTo.departments } });
+          filterConditions.push({ dept: { $in: test.assignedTo.departments } });
         }
         if (test.assignedTo.year && test.assignedTo.year.length > 0) {
-          andConditions.push({ year: { $in: test.assignedTo.year } });
+          filterConditions.push({ year: { $in: test.assignedTo.year } });
         }
         if (test.assignedTo.section && test.assignedTo.section.length > 0) {
-          andConditions.push({ section: { $in: test.assignedTo.section } });
+          filterConditions.push({ section: { $in: test.assignedTo.section } });
         }
         if (test.assignedTo.semester && test.assignedTo.semester.length > 0) {
-          andConditions.push({ semester: { $in: test.assignedTo.semester.map(String) } });
+          filterConditions.push({ semester: { $in: test.assignedTo.semester.map(String) } });
         }
       }
 
@@ -855,9 +865,7 @@ router.get(
       } = req.query;
 
       if (search) {
-        // Use $and to ensure this search condition is added to the main query which might already have an $and
-        if (!query.$and) query.$and = [];
-        query.$and.push({
+        filterConditions.push({
           $or: [
             { name: { $regex: search, $options: "i" } },
             { enrollmentNumber: { $regex: search, $options: "i" } },
@@ -867,7 +875,7 @@ router.get(
       }
 
       if (dept && dept !== "all") {
-        andConditions.push({
+        filterConditions.push({
           dept: {
             $regex: dept.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
             $options: "i",
@@ -876,7 +884,7 @@ router.get(
       }
 
       if (year && year !== "all") {
-        andConditions.push({
+        filterConditions.push({
           year: {
             $regex: year.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
             $options: "i",
@@ -885,7 +893,7 @@ router.get(
       }
 
       if (section && section !== "all") {
-        andConditions.push({
+        filterConditions.push({
           section: {
             $regex: section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
             $options: "i",
@@ -893,8 +901,8 @@ router.get(
         });
       }
 
-      if (andConditions.length > 0) {
-        query.$and = andConditions;
+      if (filterConditions.length > 0) {
+        query.$and = filterConditions;
       }
 
       // 4. Sort

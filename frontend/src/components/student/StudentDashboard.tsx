@@ -59,15 +59,19 @@ const StudentDashboard = () => {
       } as Test;
     });
 
-    const userSem = String(user?.semester || '');
-    const userDept = String(user?.dept || 'undefined');
+    const userSem = String((user as any)?.semester || (user as any)?.sem || '');
+    const userDept = String((user as any)?.dept || (user as any)?.department || (user as any)?.branch || '').trim();
 
     return mapped.filter((t) => {
       const semMatches = t.assignedTo.semester.length === 0 || t.assignedTo.semester.includes(userSem);
-      const deptMatches = t.assignedTo.departments.length === 0 || t.assignedTo.departments.some(d => d.toLowerCase() === userDept.toLowerCase());
+      // If user's department is missing, don't client-filter by dept (server already filters).
+      const deptMatches =
+        !userDept ||
+        t.assignedTo.departments.length === 0 ||
+        t.assignedTo.departments.some((d) => d.trim().toLowerCase() === userDept.toLowerCase());
       return semMatches && deptMatches;
     });
-  }, [testsQuery.data, user?.semester, user?.dept]);
+  }, [testsQuery.data, (user as any)?.semester, (user as any)?.sem, (user as any)?.dept, (user as any)?.department, (user as any)?.branch]);
 
   const myAttempts: Attempt[] = useMemo(() => {
     const serverAttempts = Array.isArray((attemptsQuery.data as any)?.attempts) ? (attemptsQuery.data as any).attempts : [];
@@ -193,7 +197,19 @@ const StudentDashboard = () => {
             <h2 className="text-2xl font-semibold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
               Available Tests
             </h2>
-            {availableTests.length === 0 ? (
+            {testsQuery.isLoading ? (
+              <Card className="backdrop-blur-xl bg-white/5 border-white/10">
+                <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+                  Loading tests...
+                </CardContent>
+              </Card>
+            ) : testsQuery.isError ? (
+              <Card className="backdrop-blur-xl bg-white/5 border-white/10">
+                <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+                  Failed to load tests.
+                </CardContent>
+              </Card>
+            ) : availableTests.length === 0 ? (
               <Card className="backdrop-blur-xl bg-white/5 border-white/10">
                 <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
                   No tests available at the moment.

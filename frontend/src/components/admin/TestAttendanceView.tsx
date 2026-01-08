@@ -438,7 +438,7 @@ const TestAttendanceView = ({ tests }: { tests: Test[] }) => {
               <CardTitle>Students Who Haven't Attended ({notAttendedTotal})</CardTitle>
             </CardHeader>
             <CardContent>
-              {notAttendedQuery.isLoading ? (
+              {notAttendedQuery?.isLoading ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin" />
                 </div>
