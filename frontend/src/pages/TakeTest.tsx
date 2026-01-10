@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { AlertTriangle, Clock, Maximize2, Minimize2, Webcam, Wifi, WifiOff, Menu, Move, EyeOff } from 'lucide-react';
+import { AlertTriangle, Clock, Maximize2, Minimize2, Wifi, WifiOff, Menu } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
@@ -21,10 +21,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import * as faceapi from '@vladmandic/face-api';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
-import '@tensorflow/tfjs-backend-webgl';
-import '@tensorflow/tfjs-backend-cpu';
 
 const STORAGE_KEY_PREFIX = 'scholar_shield_attempt_';
 
@@ -45,48 +41,11 @@ const TakeTest = () => {
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
-  const [webcamActive, setWebcamActive] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [objectDetector, setObjectDetector] = useState<cocoSsd.ObjectDetection | null>(null);
 
   // Refs
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const timerRef = useRef<NodeJS.Timeout>();
   const autoSubmitRef = useRef(false);
-
-  // Mobile Webcam Controls
-  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [isMinimized, setIsMinimized] = useState(false);
-
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-    // Only allow drag on mobile (or when fixed position matches mobile styles)
-    if (window.innerWidth >= 768) return;
-
-    setIsDragging(true);
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    setDragStart({ x: clientX - dragPosition.x, y: clientY - dragPosition.y });
-  };
-
-  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDragging) return;
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-
-    // Optional: Add boundary checks here if needed
-    setDragPosition({
-      x: clientX - dragStart.x,
-      y: clientY - dragStart.y
-    });
-  };
-
-  const handleDragEnd = () => {
-    setIsDragging(false);
-  };
 
   // Load Test & Restore State
   useEffect(() => {
@@ -306,127 +265,6 @@ const TakeTest = () => {
       window.removeEventListener('paste', handleCopyPaste);
     };
   }, []);
-
-  // --------------------------------------------------------------------------------
-  // Webcam & AI Proctoring Logic
-  // --------------------------------------------------------------------------------
-
-  // 1. Initialize Webcam only when not loading and videoRef is available
-  useEffect(() => {
-    // If test is not loaded yet, don't start webcam (element doesn't exist)
-    if (!test || questions.length === 0) return;
-
-    let localStream: MediaStream | null = null;
-
-    const startWebcam = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        localStream = stream;
-
-        // Wait for ref to fill (in case of render timing)
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setWebcamActive(true);
-        }
-      } catch (err) {
-        console.error('Webcam error:', err);
-        toast.warning('Webcam access is recommended for this test.', {
-          description: 'Please release camera permissions if blocked.'
-        });
-      }
-    };
-
-    startWebcam();
-
-    return () => {
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
-      setWebcamActive(false);
-    };
-  }, [test, questions.length]); // Re-run if test loads (transition from spinner to UI)
-
-  // 2. Load Models
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
-          // faceapi.nets.ssdMobilenetv1.loadFromUri('/models') // Alternative
-        ]);
-        const detector = await cocoSsd.load();
-        setObjectDetector(detector);
-        setModelsLoaded(true);
-        toast.success('Proctoring AI Loaded');
-      } catch (err) {
-        console.error('Failed to load AI models', err);
-        toast.error('Failed to load proctoring models. Please refresh.');
-      }
-    };
-    loadModels();
-  }, []);
-
-  // 3. AI Analysis Loop
-  useEffect(() => {
-    // AI Analysis Loop - Client Side Only
-    if (!webcamActive || !test || !user || !modelsLoaded || !objectDetector) return;
-
-    const runAI = async () => {
-      if (!videoRef.current || !videoRef.current.readyState) return;
-
-      const video = videoRef.current; // capture ref value
-
-      try {
-        // A. Face Detection
-        // Using TinyFaceDetector for performance
-        const faces = await faceapi.detectAllFaces(
-          video,
-          new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
-        );
-
-        // Check for Multiple Faces
-        if (faces.length > 1) {
-          console.log('[PROCTOR] Multiple faces detected:', faces.length);
-          setSuspiciousEvents(prev => {
-            const last = prev[prev.length - 1];
-            const now = Date.now();
-            if (last && (now - new Date(last.timestamp).getTime() < 3000) && last.type === 'multiple-faces') {
-              return prev;
-            }
-            toast.warning('Multiple faces detected!', { duration: 4000 });
-            return [...prev, { type: 'multiple-faces', timestamp: new Date().toISOString() }];
-          });
-        }
-
-        // Optional: Check for No Face (or face too small/far)
-        // if (faces.length === 0) { ... }
-
-        // B. Object Detection (Phone)
-        const objects = await objectDetector.detect(video);
-        const phones = objects.filter(obj => obj.class === 'cell phone' || obj.class === 'phone'); // 'cell phone' is standard coco label
-
-        if (phones.length > 0) {
-          console.log('[PROCTOR] Phone detected:', phones);
-          setSuspiciousEvents(prev => {
-            const last = prev[prev.length - 1];
-            const now = Date.now();
-            if (last && (now - new Date(last.timestamp).getTime() < 3000) && last.type === 'phone-detected') {
-              return prev;
-            }
-            toast.error('Mobile phone detected!', { duration: 4000 });
-            return [...prev, { type: 'phone-detected', timestamp: new Date().toISOString() }];
-          });
-        }
-
-      } catch (err) {
-        console.error('AI Loop Error:', err);
-      }
-    };
-
-    // Run every 2 seconds (balance between load and responsiveness)
-    const intervalId = setInterval(runAI, 2000);
-    return () => clearInterval(intervalId);
-  }, [webcamActive, test, user, modelsLoaded, objectDetector]);
 
   const handleAnswer = (optionIndex: number) => {
     const qId = questions[currentQuestionIndex].id;
@@ -652,99 +490,25 @@ const TakeTest = () => {
               </span>
             </div>
 
-            <Button
-              onClick={() => setCurrentQuestionIndex(prev => Math.min(questions.length - 1, prev + 1))}
-              disabled={currentQuestionIndex === questions.length - 1}
-            >
-              Next
-            </Button>
+            {currentQuestionIndex === questions.length - 1 ? (
+              <Button
+                onClick={() => setShowSubmitDialog(true)}
+                className="bg-primary hover:bg-primary/90"
+              >
+                Submit Test
+              </Button>
+            ) : (
+              <Button
+                onClick={() => setCurrentQuestionIndex(prev => Math.min(questions.length - 1, prev + 1))}
+              >
+                Next
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Sidebar Column (Visible on mobile for webcam, hidden for others) */}
-        <div className="flex flex-col gap-6 pointer-events-none md:pointer-events-auto">
-
-          {/* Webcam Preview - Responsive Position */}
-          {/* Mobile: Fixed bottom-right. Desktop: Static in sidebar. */}
-          {/* Webcam Preview - Responsive Position */}
-          {/* Mobile: Draggable & Minimizable. Desktop: Static in sidebar. */}
-          <Card
-            className={`
-              pointer-events-auto overflow-hidden fixed z-50 
-              md:static md:w-full md:h-auto md:translate-x-0 md:translate-y-0 md:!transform-none
-              border-2 md:border shadow-lg md:shadow-none
-              transition-all duration-200
-              ${isMinimized ? 'w-12 h-12 rounded-full bottom-20 right-4 border-primary' : 'w-32 h-24 bottom-4 right-4'}
-            `}
-            style={{
-              transform: `translate(${dragPosition.x}px, ${dragPosition.y}px)`,
-              touchAction: 'none' // Prevent scrolling while dragging
-            }}
-            onTouchStart={handleDragStart}
-            onMouseDown={handleDragStart}
-            onTouchMove={handleDragMove}
-            onMouseMove={handleDragMove}
-            onMouseUp={handleDragEnd}
-            onTouchEnd={handleDragEnd}
-            onMouseLeave={handleDragEnd}
-          >
-            {/* Desktop Header */}
-            <CardHeader className="pb-3 bg-muted/50 hidden md:flex">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Webcam className="w-4 h-4" /> Proctoring {modelsLoaded ? 'Active' : 'Loading...'}
-                </CardTitle>
-                <div className={`w-2 h-2 rounded-full ${webcamActive && modelsLoaded ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-              </div>
-            </CardHeader>
-
-            {/* Mobile Controls Overlay */}
-            <div className="md:hidden absolute inset-0 z-20 flex flex-col items-center justify-center">
-              {isMinimized ? (
-                // Minimized State Icon
-                <div className="relative w-full h-full flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setIsMinimized(false); }}>
-                  <Webcam className="w-6 h-6 text-primary" />
-                  <div className={`absolute top-1 right-2 w-2.5 h-2.5 rounded-full border border-background ${webcamActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                  <Move className="absolute bottom-1 w-3 h-3 text-muted-foreground opacity-50" />
-                </div>
-              ) : (
-                // Expanded State Controls - Minimize Button
-                <div className="absolute top-0 right-0 p-1">
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="h-5 w-5 rounded-full opacity-70 hover:opacity-100 shadow-sm"
-                    onClick={(e) => { e.stopPropagation(); setIsMinimized(true); }}
-                  >
-                    <EyeOff className="w-3 h-3" />
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Video Content */}
-            {/* We keep video mounted even when minimized to ensure stream/AI continues */}
-            <div className={`aspect-video bg-black relative ${isMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100'} transition-opacity duration-200`}>
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-              <canvas ref={canvasRef} className="hidden" />
-
-              {/* Drag Handle Indicator (Expanded Mobile) */}
-              {!isMinimized && (
-                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 md:hidden opacity-50 bg-black/50 rounded-full p-0.5 pointer-events-none">
-                  <Move className="w-3 h-3 text-white" />
-                </div>
-              )}
-
-              {/* Mobile Status Indicator Overlay (Expanded only) */}
-              <div className={`absolute top-1 left-1 w-2 h-2 rounded-full ${webcamActive ? 'bg-green-500' : 'bg-red-500'} md:hidden animate-pulse`} />
-            </div>
-          </Card>
+        {/* Sidebar Column */}
+        <div className="flex flex-col gap-6">
 
           {/* Question Navigator (Desktop Only) */}
           <Card className="hidden md:block">

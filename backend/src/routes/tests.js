@@ -542,23 +542,11 @@ router.post("/:id/submit", requireAuth, async (req, res, next) => {
     const tabSwitchEvents = suspiciousEvents.filter(
       (event) => event.type === "tab-switch"
     );
-    const multiFaceEvents = suspiciousEvents.filter(
-      (event) => event.type === "multiple-faces"
-    );
-    const phoneEvents = suspiciousEvents.filter(
-      (event) => event.type === "phone-detected"
-    );
 
     // Strict Malpractice Rules:
     // 1. Auto-submitted explicitly
     // 2. Tab switches >= 3
-    // 3. Multiple faces >= 1 (Strict) or set a threshold e.g. > 2 seconds
-    // 4. Phone detected >= 1
-    const hasMalpractice =
-      autoSubmitted ||
-      tabSwitchEvents.length >= 3 ||
-      multiFaceEvents.length > 0 ||
-      phoneEvents.length > 0;
+    const hasMalpractice = autoSubmitted || tabSwitchEvents.length >= 3;
 
     attempt.answers = answers;
     attempt.suspiciousEvents = suspiciousEvents || [];
@@ -575,12 +563,6 @@ router.post("/:id/submit", requireAuth, async (req, res, next) => {
       if (autoSubmitted) reasons.push(malpracticeReason || "Auto-submitted");
       if (tabSwitchEvents.length >= 3)
         reasons.push(`Excessive tab switching (${tabSwitchEvents.length})`);
-      if (multiFaceEvents.length > 0)
-        reasons.push(
-          `Multiple faces detected (${multiFaceEvents.length} times)`
-        );
-      if (phoneEvents.length > 0)
-        reasons.push(`Phone detected (${phoneEvents.length} times)`);
 
       attempt.malpracticeReason = reasons.join(", ");
     }

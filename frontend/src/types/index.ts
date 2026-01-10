@@ -53,7 +53,7 @@ export interface Answer {
 }
 
 export interface SuspiciousEvent {
-  type: 'tab-switch' | 'fullscreen-exit' | 'copy-attempt' | 'paste-attempt' | 'context-menu' | 'inspect-attempt' | 'screenshot-attempt' | 'print-attempt' | 'ai-flagged' | 'copy-paste-attempt' | 'multiple-faces' | 'phone-detected';
+  type: 'tab-switch' | 'fullscreen-exit' | 'copy-attempt' | 'paste-attempt' | 'context-menu' | 'inspect-attempt' | 'screenshot-attempt' | 'print-attempt' | 'ai-flagged' | 'copy-paste-attempt';
   timestamp: string;
 }
 
