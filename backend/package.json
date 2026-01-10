@@ -10,6 +10,7 @@
     "start": "node src/index.js",
     "dev": "nodemon --watch src --exec node src/index.js",
     "seed": "node src/seed.js",
+    "seed:students": "node src/seed-students.js",
     "debug:emails": "node scripts/debug-emails.js"
   },
   "dependencies": {
@@ -27,7 +28,8 @@
     "multer": "^1.4.5-lts.1",
     "openai": "^6.10.0",
     "pdf-parse": "^1.1.1",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^2.0.22"
